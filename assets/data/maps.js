@@ -107,7 +107,7 @@ const masterMapsData = [
         ]
     },
     {
-        meta: { id: 'newyork', title: 'New York', scale: 1.0, enabled: true },
+        meta: { id: 'newyork', title: 'New York', scale: 0.67, enabled: true },
         locations: [
             { id: 'ny_mis_01', type: 'mission', title: 'The Tombs', district: 'Civic Center', coords: { x: 2433, y: 240 }, isFastTravel: true },
             { id: 'ny_mis_02', type: 'mission', title: 'Stranded Tanker', district: 'Two Bridges', coords: { x: 2883, y: 846 }, isFastTravel: true },
@@ -143,7 +143,7 @@ const masterMapsData = [
         ]
     },
     {
-        meta: { id: "brooklyn", title: "Brooklyn", scale: 1.0, enabled: true },
+        meta: { id: "brooklyn", title: "Brooklyn", scale: 0.64, enabled: true },
         locations: [
             { id: 'bk_mis_01', type: 'mission', title: 'Bridge Park Pier', district: 'Brooklyn Heights', coords: { x: 1133, y: 1343 }, isFastTravel: true },
             { id: 'bk_mis_02', type: 'mission', title: 'Clark Street', district: 'Brooklyn Heights', coords: { x: 1413, y: 1589 }, isFastTravel: true },
