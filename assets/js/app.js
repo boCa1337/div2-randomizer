@@ -175,13 +175,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     ];
 
-    let typeWeights = {
-        activity: 30,
-        controlPoint: 20,
-        mission: 10,
-        bounty: 5
+    const icons = {
+        mission: `<svg viewBox="3 3 18 18"><path fill-rule="evenodd" d="M12 20.9L19.7 16.4V7.6L12 3.1L4.3 7.6V16.4L12 20.9ZM12 19.2L18.2 15.6V8.4L12 4.8L5.8 8.4V15.6L12 19.2ZM12 17.6L16.9 14.8V9.2L12 6.4L7.1 9.2V14.8L12 17.6ZM12 16.1L15.6 14V10L12 8L8.4 10V14L12 16.1Z"/></svg>`,
+        controlPoint: `<svg viewBox="1 2 22 20"><path d="M5 2V22H7V2H5Z M7 2L21 7L7 12V2Z"/></svg>`,
+        bounty: `<svg viewBox="0 0 15 15"><path fill-rule="evenodd" clip-rule="evenodd" d="M7.5 0C7.77614 0 8 0.223858 8 0.5V1.80687C10.6922 2.0935 12.8167 4.28012 13.0068 7H14.5C14.7761 7 15 7.22386 15 7.5C15 7.77614 14.7761 8 14.5 8H12.9888C12.7094 10.6244 10.6244 12.7094 8 12.9888V14.5C8 14.7761 7.77614 15 7.5 15C7.22386 15 7 14.7761 7 14.5V13.0068C4.28012 12.8167 2.0935 10.6922 1.80687 8H0.5C0.223858 8 0 7.77614 0 7.5C0 7.22386 0.223858 7 0.5 7H1.78886C1.98376 4.21166 4.21166 1.98376 7 1.78886V0.5C7 0.223858 7.22386 0 7.5 0ZM8 12.0322V9.5C8 9.22386 7.77614 9 7.5 9C7.22386 9 7 9.22386 7 9.5V12.054C4.80517 11.8689 3.04222 10.1668 2.76344 8H5.5C5.77614 8 6 7.77614 6 7.5C6 7.22386 5.77614 7 5.5 7H2.7417C2.93252 4.73662 4.73662 2.93252 7 2.7417V5.5C7 5.77614 7.22386 6 7.5 6C7.77614 6 8 5.77614 8 5.5V2.76344C10.1668 3.04222 11.8689 4.80517 12.054 7H9.5C9.22386 7 9 7.22386 9 7.5C9 7.77614 9.22386 8 9.5 8H12.0322C11.7621 10.0991 10.0991 11.7621 8 12.0322Z"/></svg>`,
+        activity: `<svg viewBox="0 0 27.774 27.774"><path d="M10.398,22.811h4.618v4.964h-4.618V22.811z M21.058,1.594C19.854,0.532,17.612,0,14.33,0c-3.711,0-6.205,0.514-7.482,1.543 c-1.277,1.027-1.916,3.027-1.916,6L4.911,8.551h4.577l-0.02-1.049c0-1.424,0.303-2.377,0.907-2.854 c0.604-0.477,1.814-0.717,3.632-0.717c1.936,0,3.184,0.228,3.74,0.676c0.559,0.451,0.837,1.457,0.837,3.017 c0,1.883-0.745,3.133-2.237,3.752l-1.797,0.766c-1.882,0.781-3.044,1.538-3.489,2.27c-0.442,0.732-0.665,2.242-0.665,4.529h4.68 v-0.646c0-1.41,0.987-2.533,2.965-3.365c2.03-0.861,3.343-1.746,3.935-2.651c0.592-0.908,0.888-2.498,0.888-4.771 C22.863,4.625,22.261,2.655,21.058,1.594z"/></svg>`
     };
+
     const REPEAT_TYPE_MALUS = 0.25;
+    const MIN_TASKS_BEFORE_SWITCH = 8;
+    const MAP_SWITCH_CHANCE = 0.25;
 
     const startBtn = document.getElementById('start-btn');
     const pauseBtn = document.getElementById('pause-btn');
@@ -190,6 +193,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const sessionTimerEl = document.getElementById('session-timer');
     const taskListEl = document.getElementById('task-list-container');
     const weightsEditorEl = document.getElementById('weights-editor');
+    const mapsEditorEl = document.getElementById('maps-editor');
+
+    let typeWeights = {
+        activity: 30,
+        controlPoint: 20,
+        mission: 10,
+        bounty: 5,
+        mapChange: 5
+    };
 
     let sessionData = null;
     let state = {
@@ -200,26 +212,24 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTaskStartTime: 0,
         totalTimePaused: 0,
         pauseStartTime: 0,
-        timerInterval: null
+        timerInterval: null,
+        currentMapId: null,
+        tasksOnCurrentMap: 0
     };
 
-    const icons = {
-        mission: `<svg viewBox="3 3 18 18"><path fill-rule="evenodd" d="M12 20.9L19.7 16.4V7.6L12 3.1L4.3 7.6V16.4L12 20.9ZM12 19.2L18.2 15.6V8.4L12 4.8L5.8 8.4V15.6L12 19.2ZM12 17.6L16.9 14.8V9.2L12 6.4L7.1 9.2V14.8L12 17.6ZM12 16.1L15.6 14V10L12 8L8.4 10V14L12 16.1Z"/></svg>`,
-        controlPoint: `<svg viewBox="4 2 18 20"><path d="M5 2V22H7V2H5Z M7 2L21 7L7 12V2Z"/></svg>`,
-        bounty: `<svg viewBox="0 0 15 15"><path fill-rule="evenodd" clip-rule="evenodd" d="M7.5 0C7.77614 0 8 0.223858 8 0.5V1.80687C10.6922 2.0935 12.8167 4.28012 13.0068 7H14.5C14.7761 7 15 7.22386 15 7.5C15 7.77614 14.7761 8 14.5 8H12.9888C12.7094 10.6244 10.6244 12.7094 8 12.9888V14.5C8 14.7761 7.77614 15 7.5 15C7.22386 15 7 14.7761 7 14.5V13.0068C4.28012 12.8167 2.0935 10.6922 1.80687 8H0.5C0.223858 8 0 7.77614 0 7.5C0 7.22386 0.223858 7 0.5 7H1.78886C1.98376 4.21166 4.21166 1.98376 7 1.78886V0.5C7 0.223858 7.22386 0 7.5 0ZM8 12.0322V9.5C8 9.22386 7.77614 9 7.5 9C7.22386 9 7 9.22386 7 9.5V12.054C4.80517 11.8689 3.04222 10.1668 2.76344 8H5.5C5.77614 8 6 7.77614 6 7.5C6 7.22386 5.77614 7 5.5 7H2.7417C2.93252 4.73662 4.73662 2.93252 7 2.7417V5.5C7 5.77614 7.22386 6 7.5 6C7.77614 6 8 5.77614 8 5.5V2.76344C10.1668 3.04222 11.8689 4.80517 12.054 7H9.5C9.22386 7 9 7.22386 9 7.5C9 7.77614 9.22386 8 9.5 8H12.0322C11.7621 10.0991 10.0991 11.7621 8 12.0322Z"/></svg>`,
-        activity: `<svg viewBox="0 0 27.774 27.774"><path d="M10.398,22.811h4.618v4.964h-4.618V22.811z M21.058,1.594C19.854,0.532,17.612,0,14.33,0c-3.711,0-6.205,0.514-7.482,1.543 c-1.277,1.027-1.916,3.027-1.916,6L4.911,8.551h4.577l-0.02-1.049c0-1.424,0.303-2.377,0.907-2.854 c0.604-0.477,1.814-0.717,3.632-0.717c1.936,0,3.184,0.228,3.74,0.676c0.559,0.451,0.837,1.457,0.837,3.017 c0,1.883-0.745,3.133-2.237,3.752l-1.797,0.766c-1.882,0.781-3.044,1.538-3.489,2.27c-0.442,0.732-0.665,2.242-0.665,4.529h4.68 v-0.646c0-1.41,0.987-2.533,2.965-3.365c2.03-0.861,3.343-1.746,3.935-2.651c0.592-0.908,0.888-2.498,0.888-4.771 C22.863,4.625,22.261,2.655,21.058,1.594z"/></svg>`
-    };
-
-    function getDistance(c1, c2) {
-        if (!c1 || !c2) return Infinity;
-        return Math.sqrt(Math.pow(c1.x - c2.x, 2) + Math.pow(c1.y - c2.y, 2));
+    function getDistance(c1, c2, scale = 1) {
+        const rawDist = Math.sqrt(Math.pow(c1.x - c2.x, 2) + Math.pow(c1.y - c2.y, 2));
+        return Math.round(rawDist / scale);
     }
 
-    function findClosestFastTravel(target, locations) {
-        const points = locations.filter(l => l.isFastTravel && l.coords);
+    function findClosestFastTravel(target, map) {
+        const points = map.locations.filter(l => l.isFastTravel && l.coords);
         if (points.length === 0) return { message: "No fast travel points available." };
-        const closest = points.reduce((acc, p) => (getDistance(target.coords, p.coords) < acc.dist ? { dist: getDistance(target.coords, p.coords), point: p } : acc), { dist: Infinity, point: null });
-        return { nearestPoint: closest.point, distance: Math.round(closest.dist) };
+        const closest = points.reduce((acc, p) => {
+            const dist = getDistance(target.coords, p.coords, map.meta.scale);
+            return dist < acc.dist ? { dist, point: p } : acc;
+        }, { dist: Infinity, point: null });
+        return { nearestPoint: closest.point, distance: closest.dist };
     }
 
     function getWeightedRandomType(availableTypes, lastTaskType) {
@@ -230,10 +240,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return { type, weight };
         });
-
         const totalWeight = weightedTypes.reduce((sum, item) => sum + item.weight, 0);
-        if (totalWeight <= 0) return availableTypes[0];
-
+        if (totalWeight <= 0) return availableTypes.find(t => t !== 'mapChange') || availableTypes[0];
         let randomNum = Math.random() * totalWeight;
         for (const item of weightedTypes) {
             randomNum -= item.weight;
@@ -244,81 +252,99 @@ document.addEventListener('DOMContentLoaded', () => {
         return availableTypes[availableTypes.length - 1];
     }
 
-    function getRandomActivity(mapData, lastTask = null) {
-        const lastTaskType = lastTask ? lastTask.target.type : null;
+    function getRandomActivity(lastTask = null) {
+        const enabledMaps = sessionData.filter(m => m.meta.enabled);
+        if (enabledMaps.length === 0) return { target: { title: "No Maps Enabled" }, travelInfo: {}, map: null, mapSwitched: false };
 
-        const basePool = mapData.locations.filter(l =>
+        const lastTaskType = lastTask ? lastTask.target.type : null;
+        let currentMap = sessionData.find(m => m.meta.id === state.currentMapId);
+        let targetMap = currentMap;
+        let mapSwitched = false;
+
+        const canSwitch = enabledMaps.length > 1 && state.tasksOnCurrentMap >= MIN_TASKS_BEFORE_SWITCH;
+        if (canSwitch && Math.random() < MAP_SWITCH_CHANCE) {
+            const otherMaps = enabledMaps.filter(m => m.meta.id !== currentMap.meta.id);
+            if (otherMaps.length > 0) {
+                targetMap = otherMaps[Math.floor(Math.random() * otherMaps.length)];
+                mapSwitched = true;
+            }
+        }
+
+        const basePool = targetMap.locations.filter(l =>
             typeWeights[l.type] > 0 &&
             !(l.type === 'controlPoint' && l.isFastTravel)
         );
 
         if (basePool.length === 0) {
-            return { target: { title: "No activities available!" }, travelInfo: {} };
+            return { target: { title: `No weighted activities on ${targetMap.meta.title}` }, travelInfo: {}, map: targetMap, mapSwitched };
         }
 
         const availableTypes = [...new Set(basePool.map(l => l.type))];
-        if (availableTypes.length === 0) {
-            return { target: { title: "No types available!" }, travelInfo: {} };
-        }
-
         const chosenType = getWeightedRandomType(availableTypes, lastTaskType);
 
         let typeSpecificPool = basePool.filter(l => l.type === chosenType);
-
-        if (lastTask && lastTask.target.type !== 'activity' && lastTask.target.type === chosenType) {
-            const filteredByType = typeSpecificPool.filter(l => l.id !== lastTask.target.id);
-            if (filteredByType.length > 0) {
-                typeSpecificPool = filteredByType;
-            }
+        if (lastTask && !mapSwitched && lastTask.target.type !== 'activity' && lastTask.target.type === chosenType) {
+            const filteredPool = typeSpecificPool.filter(l => l.id !== lastTask.target.id);
+            if (filteredPool.length > 0) typeSpecificPool = filteredPool;
         }
 
         const target = typeSpecificPool[Math.floor(Math.random() * typeSpecificPool.length)];
 
-        if (target.type === 'activity' && lastTask && lastTask.target.district) {
+        if (!target) return { target: { title: "Error selecting task!" }, travelInfo: {}, map: targetMap, mapSwitched };
+
+        if (target.type === 'activity' && lastTask && lastTask.map.meta.id === targetMap.meta.id && lastTask.target.district) {
             target.district = lastTask.target.district;
         }
 
         let travelInfo = {};
         if (target.isFastTravel) {
             travelInfo = { message: "Fast travel directly." };
-        } else if (target.type === 'activity') {
-            travelInfo = { message: `Recommended: ${target.district} district.` };
         } else if (!target.coords) {
             travelInfo = { message: `In ${target.district} district.` };
         } else {
-            travelInfo = findClosestFastTravel(target, mapData.locations);
+            travelInfo = findClosestFastTravel(target, targetMap);
         }
-        return { target, travelInfo };
+        return { target, travelInfo, map: targetMap, mapSwitched };
     }
 
     function createTaskDisplay(taskData) {
-        const { target, travelInfo } = taskData;
+        const { target, travelInfo, map } = taskData;
         let primaryText = target.title;
         let secondaryText = "";
+        let mapText = map ? map.meta.title : "";
+
         switch (target.type) {
             case 'mission': primaryText = `Mission: ${target.title}`; break;
             case 'controlPoint': primaryText = `CP: ${target.title}`; break;
             case 'bounty': primaryText = `Bounty: ${target.district}`; break;
             case 'activity': primaryText = `Random Activity`; break;
         }
-        if (travelInfo.nearestPoint) secondaryText = `via ${travelInfo.nearestPoint.title} (~${travelInfo.distance}m)`;
-        else if (travelInfo.message) secondaryText = travelInfo.message;
-        return { primaryText, secondaryText };
+
+        if (travelInfo.nearestPoint) {
+            secondaryText = `via ${travelInfo.nearestPoint.title} (~${travelInfo.distance}m)`;
+        } else if (travelInfo.message) {
+            secondaryText = travelInfo.message;
+        }
+
+        if (target.type === 'activity') {
+            secondaryText = `Recommended: ${target.district} district.`;
+        }
+
+        return { primaryText, secondaryText, mapText };
     }
 
-    function formatTime(totalSeconds, isTotalTime) {
+    function formatTime(totalSeconds) {
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
         const seconds = totalSeconds % 60;
-        if (hours > 0 || isTotalTime) return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     }
 
     function updateTimers() {
         if (!state.isSessionActive || state.isPaused) return;
         const now = Date.now();
         const sessionElapsed = Math.floor((now - state.sessionStartTime - state.totalTimePaused) / 1000);
-        sessionTimerEl.textContent = formatTime(sessionElapsed, true);
+        sessionTimerEl.textContent = formatTime(sessionElapsed);
         const activeRow = taskListEl.querySelector('.task-row.active .time');
         if (activeRow) {
             const taskElapsed = Math.floor((now - state.currentTaskStartTime) / 1000);
@@ -327,18 +353,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addNewTask(taskData) {
+        if (!taskData || !taskData.target) {
+            console.error("Invalid task data received", taskData);
+            return;
+        }
         state.currentTask = taskData;
         state.currentTaskStartTime = Date.now();
-        const { primaryText, secondaryText } = createTaskDisplay(taskData);
+        const { primaryText, secondaryText, mapText } = createTaskDisplay(taskData);
         const row = document.createElement('div');
         row.className = 'task-row active';
         row.dataset.taskType = taskData.target.type;
         row.innerHTML = `
             <div class="info">
+                <span class="task-map">${mapText}</span>
                 <h3>${primaryText}</h3>
                 <p>${secondaryText}</p>
             </div>
-            <div class="time">00:00</div>
+            <div class="time">00:00:00</div>
         `;
         taskListEl.appendChild(row);
         taskListEl.scrollTop = taskListEl.scrollHeight;
@@ -346,13 +377,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function startSession() {
         sessionData = JSON.parse(JSON.stringify(masterMapsData));
-        const brooklynData = sessionData.find(map => map.meta.id === 'brooklyn');
+        const enabledMaps = sessionData.filter(m => m.meta.enabled);
+        if (enabledMaps.length === 0) {
+            alert('Please enable at least one map!');
+            return;
+        }
+
+        const startingMap = enabledMaps[Math.floor(Math.random() * enabledMaps.length)];
+        state.currentMapId = startingMap.meta.id;
+        state.tasksOnCurrentMap = 0;
+
         state.isSessionActive = true;
         state.isPaused = false;
         state.sessionStartTime = Date.now();
         state.totalTimePaused = 0;
-        addNewTask(getRandomActivity(brooklynData, null));
+        addNewTask(getRandomActivity(null));
         state.timerInterval = setInterval(updateTimers, 1000);
+
         startBtn.style.display = 'none';
         pauseBtn.style.display = 'inline-block';
         resetBtn.style.display = 'inline-block';
@@ -361,21 +402,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function nextTask() {
         if (!state.currentTask) return;
-        const brooklynData = sessionData.find(map => map.meta.id === 'brooklyn');
+
         const finishedRow = taskListEl.querySelector('.task-row.active');
         if (finishedRow) {
             const duration = Math.floor((Date.now() - state.currentTaskStartTime) / 1000);
             finishedRow.querySelector('.time').textContent = formatTime(duration);
             finishedRow.classList.remove('active');
         }
-        if (state.currentTask.target.type === 'controlPoint') {
-            const cpInSession = brooklynData.locations.find(loc => loc.id === state.currentTask.target.id);
-            if (cpInSession) {
-                cpInSession.isFastTravel = true;
+
+        const lastTask = state.currentTask;
+        if (lastTask.target.type === 'controlPoint') {
+            const mapOfTask = sessionData.find(m => m.meta.id === lastTask.map.meta.id);
+            if (mapOfTask) {
+                const cpInSession = mapOfTask.locations.find(loc => loc.id === lastTask.target.id);
+                if (cpInSession) cpInSession.isFastTravel = true;
             }
         }
-        const lastTask = state.currentTask;
-        addNewTask(getRandomActivity(brooklynData, lastTask));
+
+        const newTaskData = getRandomActivity(lastTask);
+
+        if (newTaskData.mapSwitched) {
+            state.currentMapId = newTaskData.map.meta.id;
+            state.tasksOnCurrentMap = 0;
+        } else {
+            state.tasksOnCurrentMap++;
+        }
+
+        addNewTask(newTaskData);
     }
 
     function pauseSession() {
@@ -396,7 +449,8 @@ document.addEventListener('DOMContentLoaded', () => {
         clearInterval(state.timerInterval);
         Object.assign(state, {
             isSessionActive: false, isPaused: false, sessionStartTime: 0, currentTask: null,
-            currentTaskStartTime: 0, totalTimePaused: 0, pauseStartTime: 0, timerInterval: null
+            currentTaskStartTime: 0, totalTimePaused: 0, pauseStartTime: 0, timerInterval: null,
+            currentMapId: null, tasksOnCurrentMap: 0
         });
         taskListEl.innerHTML = '';
         sessionTimerEl.textContent = '00:00:00';
@@ -409,15 +463,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderWeightEditor() {
         weightsEditorEl.innerHTML = '';
-        for (const type in typeWeights) {
+        Object.keys(typeWeights).forEach(type => {
+            if (type === 'mapChange') return;
             const group = document.createElement('div');
             group.className = 'weight-input-group';
-
             const iconWrapper = document.createElement('div');
             iconWrapper.className = 'icon-wrapper';
             iconWrapper.innerHTML = icons[type] || '';
-            iconWrapper.setAttribute('data-tooltip', `${type.charAt(0).toUpperCase() + type.slice(1)}`);
-
+            iconWrapper.setAttribute('data-tooltip', `${type.charAt(0).toUpperCase() + type.slice(1)} (${typeWeights[type]})`);
             const slider = document.createElement('input');
             slider.type = 'range';
             slider.id = `weight-${type}`;
@@ -425,22 +478,41 @@ document.addEventListener('DOMContentLoaded', () => {
             slider.max = 50;
             slider.value = typeWeights[type];
             slider.dataset.type = type;
-
             slider.addEventListener('input', (e) => {
                 const newWeight = parseInt(e.target.value, 10);
                 const taskType = e.target.dataset.type;
-
                 iconWrapper.setAttribute('data-tooltip', `${taskType.charAt(0).toUpperCase() + taskType.slice(1)} (${newWeight})`);
-
-                if (!isNaN(newWeight)) {
-                    typeWeights[taskType] = newWeight;
-                }
+                if (!isNaN(newWeight)) { typeWeights[taskType] = newWeight; }
             });
-
             group.appendChild(iconWrapper);
             group.appendChild(slider);
             weightsEditorEl.appendChild(group);
-        }
+        });
+    }
+
+    function renderMapSelector() {
+        mapsEditorEl.innerHTML = '';
+        masterMapsData.forEach(map => {
+            const group = document.createElement('div');
+            group.className = 'map-toggle-group';
+            const label = document.createElement('label');
+            label.setAttribute('for', `map-toggle-${map.meta.id}`);
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.id = `map-toggle-${map.meta.id}`;
+            input.checked = map.meta.enabled;
+            input.addEventListener('change', (e) => {
+                const mapToUpdate = masterMapsData.find(m => m.meta.id === map.meta.id);
+                if (mapToUpdate) mapToUpdate.meta.enabled = e.target.checked;
+            });
+            const span = document.createElement('span');
+            span.className = 'map-name';
+            span.textContent = map.meta.title;
+            label.appendChild(input);
+            label.appendChild(span);
+            group.appendChild(label);
+            mapsEditorEl.appendChild(group);
+        });
     }
 
     startBtn.addEventListener('click', startSession);
@@ -449,4 +521,5 @@ document.addEventListener('DOMContentLoaded', () => {
     resetBtn.addEventListener('click', resetSession);
 
     renderWeightEditor();
+    renderMapSelector();
 });
