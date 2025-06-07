@@ -101,9 +101,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getRandomActivity(lastTask = null) {
         const enabledMaps = sessionData.filter(m => m.meta.enabled);
-        if (enabledMaps.length === 0) return { target: { title: "No Maps Enabled" }, travelInfo: {}, map: null, mapSwitched: false };
+        if (enabledMaps.length === 0) return { target: { title: "No Maps Enabled", type: 'error' }, travelInfo: { message: "Please enable a map." }, map: null, mapSwitched: false };
 
-        const lastTaskType = lastTask ? lastTask.target.type : null;
         let currentMap = sessionData.find(m => m.meta.id === state.currentMapId) || enabledMaps[0];
         let targetMap = currentMap;
         let mapSwitched = false;
@@ -123,8 +122,8 @@ document.addEventListener('DOMContentLoaded', () => {
             targetMap.missionDeck = allMissions;
         }
 
-        const availableMissions = targetMap.missionDeck.filter(task => typeWeights.mission > 0);
         const availableCPs = targetMap.locations.filter(l => l.type === 'controlPoint' && !l.isFastTravel && typeWeights.controlPoint > 0);
+        const availableMissions = targetMap.missionDeck.filter(l => typeWeights.mission > 0);
         const repeatableTasksInMap = targetMap.repeatableTaskPool.filter(task => typeWeights[task.type] > 0);
 
         let availableTypes = [];
@@ -135,9 +134,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (availableTypes.length === 0) {
-            return { target: { title: `No weighted activities on ${targetMap.meta.title}` }, map: targetMap, mapSwitched };
+            return {
+                target: { title: "No tasks left to select!", type: 'info' },
+                travelInfo: { message: 'Adjust weights or reset the session.' },
+                map: targetMap,
+                mapSwitched
+            };
         }
 
+        const lastTaskType = lastTask ? lastTask.target.type : null;
         const chosenType = getWeightedRandomType(availableTypes, lastTaskType);
 
         let target;
@@ -157,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (remainingTypes.length > 0) {
                 return getRandomActivity(lastTask);
             } else {
-                return { target: { title: "No tasks left to select!" }, map: targetMap, mapSwitched };
+                return { target: { title: "No tasks left to select!" }, travelInfo: { message: 'Adjust weights or reset session.' }, map: targetMap, mapSwitched };
             }
         }
 
@@ -166,8 +171,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let travelInfo = {};
-        if (target.isFastTravel) { travelInfo = { message: "Fast travel directly." }; }
-        else if (!target.coords) { travelInfo = { message: `In ${target.district}.` }; }
+        if (target.isFastTravel) { travelInfo = { message: "Fast travel directly" }; }
+        else if (!target.coords) { travelInfo = { message: `In ${target.district}` }; }
         else { travelInfo = findClosestFastTravel(target, targetMap); }
 
         return { target, travelInfo, map: targetMap, mapSwitched };
@@ -178,19 +183,26 @@ document.addEventListener('DOMContentLoaded', () => {
         let primaryText = target.title;
         let secondaryText = "";
         let mapText = map ? map.meta.title : "";
-        switch (target.type) {
-            case 'mission': primaryText = `Mission: ${target.title}`; break;
-            case 'controlPoint': primaryText = `CP: ${target.title}`; break;
-            case 'bounty': primaryText = `Bounty: ${target.district}`; break;
-            case 'activity': primaryText = `Random Activity`; break;
+
+        if (target.type === 'info' || target.type === 'error') {
+            primaryText = target.title;
+        } else {
+            switch (target.type) {
+                case 'mission': primaryText = `Mission: ${target.title}`; break;
+                case 'controlPoint': primaryText = `CP: ${target.title}`; break;
+                case 'bounty': primaryText = `Bounty: ${target.district}`; break;
+                case 'activity': primaryText = `Random Activity`; break;
+            }
         }
+
         if (target.type === 'activity') {
             secondaryText = `Recommended: ${target.district}`;
-        } else if (travelInfo.nearestPoint) {
+        } else if (travelInfo && travelInfo.nearestPoint) {
             secondaryText = `via ${travelInfo.nearestPoint.title} (~${travelInfo.distance}m)`;
-        } else if (travelInfo.message) {
+        } else if (travelInfo && travelInfo.message) {
             secondaryText = travelInfo.message;
         }
+
         return { primaryText, secondaryText, mapText };
     }
 
@@ -378,8 +390,8 @@ document.addEventListener('DOMContentLoaded', () => {
             input.checked = map.meta.enabled;
             input.addEventListener('change', (e) => {
                 const mapToUpdate = masterMapsData.find(m => m.meta.id === map.meta.id);
-                if (mapToUpdate) { 
-                    mapToUpdate.meta.enabled = e.target.checked; 
+                if (mapToUpdate) {
+                    mapToUpdate.meta.enabled = e.target.checked;
                 }
                 if (state.isSessionActive) {
                     const mapInSession = sessionData.find(m => m.meta.id === map.meta.id);
