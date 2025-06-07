@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHD Session Randomizer</title>
+    <link rel="manifest" href="./site.webmanifest">
+    <link rel="icon" href="./assets/favicon/favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="./assets/favicon/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon/favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon/favicon-32x32.png">
+    <link rel="stylesheet" href="./assets/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400..900&family=Roboto+Mono:wght@700&family=Roboto:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <script src="./assets/js/app.js" defer></script>
+</head>
+
+<body>
+    <div class="shd-container">
+        <header class="main-header">
+            <h1>SHD SESSION RANDOMIZER</h1>
+            <div id="weights-editor">
+            </div>
+            <div class="session-controls">
+                <button id="start-btn" class="shd-button">INITIATE SESSION</button>
+                <button id="pause-btn" class="shd-button" style="display: none;">PAUSE</button>
+                <button id="reset-btn" class="shd-button secondary" style="display: none;">RESET</button>
+            </div>
+        </header>
+
+        <main id="task-list-container">
+        </main>
+
+        <footer class="main-footer">
+            <div id="session-timer" class="total-timer">00:00:00</div>
+            <button id="next-task-btn" class="shd-button large" disabled>OBJECTIVE COMPLETE</button>
+        </footer>
+    </div>
+</body>
+
+</html>
