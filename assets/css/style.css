@@ -7,10 +7,10 @@
     --shd-text-dark: #888888;
     --font-primary: 'Orbitron', sans-serif;
     --font-secondary: 'Roboto', sans-serif;
-    --color-mission: #ff8c00;
-    --color-controlPoint: #4a90e2;
-    --color-bounty: #d0021b;
-    --color-activity: #7f8c8d;
+    --color-mission: #00E5FF;
+    --color-controlPoint: #2ECC71;
+    --color-bounty: #E74C3C;
+    --color-activity: #F39C12;
 }
 
 @keyframes fadeIn {
@@ -47,17 +47,15 @@ body {
     width: 100%;
     max-width: 600px;
     height: 90vh;
-    /* 1. Hintergrund deutlich transparenter gemacht (von 0.85 auf 0.25) */
-    background: rgba(26, 26, 26, 0.25); 
-    border: 1px solid var(--shd-border-color); /* Rand etwas dünner für den leichten Look */
+    background: rgba(26, 26, 26, 0.25);
+    border: 1px solid var(--shd-border-color);
     padding: 20px;
     display: flex;
     flex-direction: column;
-    /* 2. Blur-Effekt stark erhöht (von 2px auf 12px) */
     backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px); /* Für ältere Safari-Browser */
-    border-radius: 8px; /* Leicht abgerundete Ecken passen gut zum Glas-Effekt */
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); /* Ein weicherer Schatten */
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
 }
 
 .main-header {
@@ -75,31 +73,25 @@ body {
 }
 
 #settings-container {
-    position: relative;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    /* Reduzierter Abstand */
+    gap: 0;
     margin-bottom: 25px;
 }
 
-#settings-container::before {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 0;
-    height: 100%;
-    width: 1px;
-    background-color: var(--shd-border-color);
-    transform: translateX(-50%);
-}
-
-/* GEÄNDERT: Zentriert den Inhaltsblock horizontal */
 .settings-column {
     display: flex;
     flex-direction: column;
     align-items: center;
-    /* Zentriert den Block in der Spalte */
+}
+
+.settings-column:first-child {
+    padding-right: 20px;
+    border-right: 1px solid var(--shd-border-color);
+}
+
+.settings-column:last-child {
+    padding-left: 20px;
 }
 
 .settings-title {
@@ -111,27 +103,23 @@ body {
     letter-spacing: 1px;
     text-transform: uppercase;
     padding-bottom: 15px;
-    /* Mehr Abstand unter dem Titel */
     width: 100%;
-    max-width: 200px;
-    /* Feste Breite für den Inhaltsblock */
+    max-width: 220px;
 }
 
 #weights-editor,
 #maps-editor {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
     width: 100%;
-    max-width: 200px;
-    /* Feste Breite für den Inhaltsblock */
+    max-width: 220px;
 }
 
-/* GEÄNDERT: Schmalerer Slider */
 .weight-input-group {
     display: grid;
     grid-template-columns: 20px 1fr;
-    gap: 10px;
+    gap: 15px;
     align-items: center;
 }
 
@@ -149,8 +137,20 @@ body {
     transition: fill 0.2s;
 }
 
-.weight-input-group:hover .icon-wrapper svg {
-    fill: var(--shd-text-light);
+.weight-input-group .icon-wrapper[data-type="mission"] svg {
+    fill: var(--color-mission);
+}
+
+.weight-input-group .icon-wrapper[data-type="controlPoint"] svg {
+    fill: var(--color-controlPoint);
+}
+
+.weight-input-group .icon-wrapper[data-type="bounty"] svg {
+    fill: var(--color-bounty);
+}
+
+.weight-input-group .icon-wrapper[data-type="activity"] svg {
+    fill: var(--color-activity);
 }
 
 .weight-input-group .icon-wrapper[data-tooltip]::before {
@@ -303,7 +303,6 @@ input[type=range]::-moz-range-thumb {
 
 .task-row.active {
     opacity: 1;
-    box-shadow: inset 0 0 10px rgba(255, 140, 0, 0.4);
     background-color: rgba(255, 140, 0, 0.1);
 }
 
@@ -314,23 +313,30 @@ input[type=range]::-moz-range-thumb {
     top: 0;
     width: 4px;
     height: 100%;
-    background-color: var(--shd-border-color);
-    transition: background-color 0.3s ease;
+    transition: all 0.3s ease;
 }
 
-.task-row.active[data-task-type="mission"]::before {
+.task-row::before {
+    opacity: 0.4;
+}
+
+.task-row.active::before {
+    opacity: 1;
+}
+
+.task-row[data-task-type="mission"]::before {
     background-color: var(--color-mission);
 }
 
-.task-row.active[data-task-type="controlPoint"]::before {
+.task-row[data-task-type="controlPoint"]::before {
     background-color: var(--color-controlPoint);
 }
 
-.task-row.active[data-task-type="bounty"]::before {
+.task-row[data-task-type="bounty"]::before {
     background-color: var(--color-bounty);
 }
 
-.task-row.active[data-task-type="activity"]::before {
+.task-row[data-task-type="activity"]::before {
     background-color: var(--color-activity);
 }
 

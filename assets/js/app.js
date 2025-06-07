@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const masterMapsData = [
         {
-            meta: { id: 'washington', title: 'Washington DC', scale: 0.8, enabled: true },
+            meta: { id: 'washington', title: 'Washington DC', scale: 1.02, enabled: true },
             locations: [
                 { id: 'dc_mis_01', type: 'mission', title: 'Grand Washington Hotel', district: 'Downtown East', coords: { x: 2229, y: 716 }, isFastTravel: true },
                 { id: 'dc_mis_02', type: 'mission', title: 'Jefferson Trade Center', district: 'Federal Triangle', coords: { x: 2147, y: 1102 }, isFastTravel: true },
@@ -117,7 +117,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 { id: 'ny_mis_04', type: 'mission', title: 'Pathway Park', district: 'Battery Park', coords: { x: 1584, y: 780 }, isFastTravel: true },
                 { id: 'ny_mis_05', type: 'mission', title: 'Liberty Island', district: 'Financial District', coords: { x: 1140, y: 1941 }, isFastTravel: true },
 
-                // TODO: CPs
                 { id: 'ny_cp_01', type: 'controlPoint', title: 'City Hall', district: 'Civic Center', coords: { x: 1893, y: 534 }, isFastTravel: false },
                 { id: 'ny_cp_02', type: 'controlPoint', title: 'The Gate', district: 'Civic Center', coords: { x: 2865, y: 62 }, isFastTravel: false },
                 { id: 'ny_cp_03', type: 'controlPoint', title: 'Brooklyn Bridge', district: 'Two Bridges', coords: { x: 2381, y: 906 }, isFastTravel: false },
@@ -199,8 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         activity: 30,
         controlPoint: 20,
         mission: 10,
-        bounty: 5,
-        mapChange: 5
+        bounty: 5
     };
 
     let sessionData = null;
@@ -214,12 +212,15 @@ document.addEventListener('DOMContentLoaded', () => {
         pauseStartTime: 0,
         timerInterval: null,
         currentMapId: null,
-        tasksOnCurrentMap: 0
+        tasksOnCurrentMap: 0,
+        mapHistory: []
     };
 
     function getDistance(c1, c2, scale = 1) {
+        if (!c1 || !c2) return Infinity;
         const rawDist = Math.sqrt(Math.pow(c1.x - c2.x, 2) + Math.pow(c1.y - c2.y, 2));
-        return Math.round(rawDist / scale);
+
+        return Math.round(rawDist * scale);
     }
 
     function findClosestFastTravel(target, map) {
@@ -241,7 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return { type, weight };
         });
         const totalWeight = weightedTypes.reduce((sum, item) => sum + item.weight, 0);
-        if (totalWeight <= 0) return availableTypes.find(t => t !== 'mapChange') || availableTypes[0];
+        if (totalWeight <= 0) return availableTypes[0];
         let randomNum = Math.random() * totalWeight;
         for (const item of weightedTypes) {
             randomNum -= item.weight;
@@ -252,12 +253,34 @@ document.addEventListener('DOMContentLoaded', () => {
         return availableTypes[availableTypes.length - 1];
     }
 
+    function getWeightedRandomMap(maps) {
+        const weightedMaps = maps.map(map => {
+            let weight = 10;
+            if (state.mapHistory.includes(map.meta.id)) {
+                weight *= 0.1;
+            }
+            return { map, weight };
+        });
+
+        const totalWeight = weightedMaps.reduce((sum, item) => sum + item.weight, 0);
+        if (totalWeight <= 0) return maps[0];
+
+        let randomNum = Math.random() * totalWeight;
+        for (const item of weightedMaps) {
+            randomNum -= item.weight;
+            if (randomNum <= 0) {
+                return item.map;
+            }
+        }
+        return maps[maps.length - 1];
+    }
+
     function getRandomActivity(lastTask = null) {
         const enabledMaps = sessionData.filter(m => m.meta.enabled);
         if (enabledMaps.length === 0) return { target: { title: "No Maps Enabled" }, travelInfo: {}, map: null, mapSwitched: false };
 
         const lastTaskType = lastTask ? lastTask.target.type : null;
-        let currentMap = sessionData.find(m => m.meta.id === state.currentMapId);
+        let currentMap = sessionData.find(m => m.meta.id === state.currentMapId) || enabledMaps[0];
         let targetMap = currentMap;
         let mapSwitched = false;
 
@@ -265,13 +288,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (canSwitch && Math.random() < MAP_SWITCH_CHANCE) {
             const otherMaps = enabledMaps.filter(m => m.meta.id !== currentMap.meta.id);
             if (otherMaps.length > 0) {
-                targetMap = otherMaps[Math.floor(Math.random() * otherMaps.length)];
+                targetMap = getWeightedRandomMap(otherMaps);
                 mapSwitched = true;
             }
         }
 
         const basePool = targetMap.locations.filter(l =>
-            typeWeights[l.type] > 0 &&
+            (typeWeights[l.type] > 0) &&
+            (l.type !== 'classifiedAssignment') &&
             !(l.type === 'controlPoint' && l.isFastTravel)
         );
 
@@ -283,9 +307,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const chosenType = getWeightedRandomType(availableTypes, lastTaskType);
 
         let typeSpecificPool = basePool.filter(l => l.type === chosenType);
+
         if (lastTask && !mapSwitched && lastTask.target.type !== 'activity' && lastTask.target.type === chosenType) {
             const filteredPool = typeSpecificPool.filter(l => l.id !== lastTask.target.id);
             if (filteredPool.length > 0) typeSpecificPool = filteredPool;
+        }
+
+        if (typeSpecificPool.length === 0) {
+            typeSpecificPool = basePool.filter(l => l.type === chosenType);
+            if (typeSpecificPool.length === 0) return getRandomActivity(null);
         }
 
         const target = typeSpecificPool[Math.floor(Math.random() * typeSpecificPool.length)];
@@ -300,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (target.isFastTravel) {
             travelInfo = { message: "Fast travel directly." };
         } else if (!target.coords) {
-            travelInfo = { message: `In ${target.district} district.` };
+            travelInfo = { message: `In ${target.district}` };
         } else {
             travelInfo = findClosestFastTravel(target, targetMap);
         }
@@ -327,7 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (target.type === 'activity') {
-            secondaryText = `Recommended: ${target.district} district.`;
+            secondaryText = `Recommended: ${target.district}`;
         }
 
         return { primaryText, secondaryText, mapText };
@@ -386,6 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const startingMap = enabledMaps[Math.floor(Math.random() * enabledMaps.length)];
         state.currentMapId = startingMap.meta.id;
         state.tasksOnCurrentMap = 0;
+        state.mapHistory = [startingMap.meta.id];
 
         state.isSessionActive = true;
         state.isPaused = false;
@@ -403,9 +434,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function nextTask() {
         if (!state.currentTask) return;
 
+        let duration;
+        if (state.isPaused) {
+            duration = Math.floor((state.pauseStartTime - state.currentTaskStartTime) / 1000);
+            state.totalTimePaused += Date.now() - state.pauseStartTime;
+            state.isPaused = false;
+            pauseBtn.textContent = 'PAUSE';
+        } else {
+            duration = Math.floor((Date.now() - state.currentTaskStartTime) / 1000);
+        }
+
         const finishedRow = taskListEl.querySelector('.task-row.active');
         if (finishedRow) {
-            const duration = Math.floor((Date.now() - state.currentTaskStartTime) / 1000);
             finishedRow.querySelector('.time').textContent = formatTime(duration);
             finishedRow.classList.remove('active');
         }
@@ -424,6 +464,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (newTaskData.mapSwitched) {
             state.currentMapId = newTaskData.map.meta.id;
             state.tasksOnCurrentMap = 0;
+            state.mapHistory.push(newTaskData.map.meta.id);
+            if (state.mapHistory.length > masterMapsData.length - 1 && state.mapHistory.length > 1) {
+                state.mapHistory.shift();
+            }
         } else {
             state.tasksOnCurrentMap++;
         }
@@ -450,7 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
         Object.assign(state, {
             isSessionActive: false, isPaused: false, sessionStartTime: 0, currentTask: null,
             currentTaskStartTime: 0, totalTimePaused: 0, pauseStartTime: 0, timerInterval: null,
-            currentMapId: null, tasksOnCurrentMap: 0
+            currentMapId: null, tasksOnCurrentMap: 0, mapHistory: []
         });
         taskListEl.innerHTML = '';
         sessionTimerEl.textContent = '00:00:00';
@@ -467,10 +511,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (type === 'mapChange') return;
             const group = document.createElement('div');
             group.className = 'weight-input-group';
+
             const iconWrapper = document.createElement('div');
             iconWrapper.className = 'icon-wrapper';
             iconWrapper.innerHTML = icons[type] || '';
             iconWrapper.setAttribute('data-tooltip', `${type.charAt(0).toUpperCase() + type.slice(1)} (${typeWeights[type]})`);
+
+            iconWrapper.dataset.type = type;
+
             const slider = document.createElement('input');
             slider.type = 'range';
             slider.id = `weight-${type}`;
@@ -478,12 +526,18 @@ document.addEventListener('DOMContentLoaded', () => {
             slider.max = 50;
             slider.value = typeWeights[type];
             slider.dataset.type = type;
+
             slider.addEventListener('input', (e) => {
                 const newWeight = parseInt(e.target.value, 10);
                 const taskType = e.target.dataset.type;
+
                 iconWrapper.setAttribute('data-tooltip', `${taskType.charAt(0).toUpperCase() + taskType.slice(1)} (${newWeight})`);
-                if (!isNaN(newWeight)) { typeWeights[taskType] = newWeight; }
+
+                if (!isNaN(newWeight)) {
+                    typeWeights[taskType] = newWeight;
+                }
             });
+
             group.appendChild(iconWrapper);
             group.appendChild(slider);
             weightsEditorEl.appendChild(group);
@@ -504,6 +558,15 @@ document.addEventListener('DOMContentLoaded', () => {
             input.addEventListener('change', (e) => {
                 const mapToUpdate = masterMapsData.find(m => m.meta.id === map.meta.id);
                 if (mapToUpdate) mapToUpdate.meta.enabled = e.target.checked;
+
+                if (!e.target.checked && state.currentMapId === mapToUpdate.meta.id) {
+                    const remainingEnabledMaps = masterMapsData.filter(m => m.meta.enabled);
+                    if (remainingEnabledMaps.length > 0) {
+                        state.currentMapId = remainingEnabledMaps[0].meta.id;
+                        state.tasksOnCurrentMap = 0;
+                        state.mapHistory = [remainingEnabledMaps[0].meta.id];
+                    }
+                }
             });
             const span = document.createElement('span');
             span.className = 'map-name';
