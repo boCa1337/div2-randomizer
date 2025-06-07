@@ -1,3 +1,39 @@
+@font-face {
+  font-display: swap;
+  font-family: 'Orbitron';
+  font-style: normal;
+  font-weight: 400;
+  src: url('./../fonts/orbitron-v34-latin-regular.woff2') format('woff2');
+}
+@font-face {
+  font-display: swap;
+  font-family: 'Orbitron';
+  font-style: normal;
+  font-weight: 700;
+  src: url('./../fonts/orbitron-v34-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-display: swap;
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 400;
+  src: url('./../fonts/roboto-v48-latin-regular.woff2') format('woff2');
+}
+@font-face {
+  font-display: swap;
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 700;
+  src: url('./../fonts/roboto-v48-latin-700.woff2') format('woff2');
+}
+@font-face {
+  font-display: swap;
+  font-family: 'Roboto Mono';
+  font-style: normal;
+  font-weight: 700;
+  src: url('./../fonts/roboto-mono-v30-latin-700.woff2') format('woff2');
+}
+
 :root {
     --shd-orange: #ff8c00;
     --shd-bg-dark: #111111;
