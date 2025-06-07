@@ -216,6 +216,13 @@ document.addEventListener('DOMContentLoaded', () => {
         mapHistory: []
     };
 
+    function shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+    }
+
     function getDistance(c1, c2, scale = 1) {
         if (!c1 || !c2) return Infinity;
         const rawDist = Math.sqrt(Math.pow(c1.x - c2.x, 2) + Math.pow(c1.y - c2.y, 2));
@@ -293,47 +300,70 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        const basePool = targetMap.locations.filter(l =>
-            (typeWeights[l.type] > 0) &&
-            (l.type !== 'classifiedAssignment') &&
-            !(l.type === 'controlPoint' && l.isFastTravel)
-        );
-
-        if (basePool.length === 0) {
-            return { target: { title: `No weighted activities on ${targetMap.meta.title}` }, travelInfo: {}, map: targetMap, mapSwitched };
+        if (targetMap.uniqueTaskDeck.length === 0) {
+            const allUniqueTasks = targetMap.locations.filter(l => l.type === 'mission' || l.type === 'controlPoint');
+            shuffleArray(allUniqueTasks);
+            targetMap.uniqueTaskDeck = allUniqueTasks;
         }
 
-        const availableTypes = [...new Set(basePool.map(l => l.type))];
+        const uniqueTasksInMap = targetMap.uniqueTaskDeck.filter(task => typeWeights[task.type] > 0);
+        const repeatableTasksInMap = targetMap.repeatableTaskPool.filter(task => typeWeights[task.type] > 0);
+
+        let availableTypes = [];
+        if (uniqueTasksInMap.length > 0) {
+            availableTypes.push(...[...new Set(uniqueTasksInMap.map(t => t.type))]);
+        }
+        if (repeatableTasksInMap.length > 0) {
+            availableTypes.push(...[...new Set(repeatableTasksInMap.map(t => t.type))]);
+        }
+
+        if (mapSwitched && availableTypes.length > 1) {
+        } else if (canSwitch && !mapSwitched) {
+            availableTypes.push('mapChange');
+        }
+
+        if (availableTypes.length === 0) {
+            return { target: { title: `No weighted activities on ${targetMap.meta.title}` }, map: targetMap, mapSwitched };
+        }
+
         const chosenType = getWeightedRandomType(availableTypes, lastTaskType);
 
-        let typeSpecificPool = basePool.filter(l => l.type === chosenType);
-
-        if (lastTask && !mapSwitched && lastTask.target.type !== 'activity' && lastTask.target.type === chosenType) {
-            const filteredPool = typeSpecificPool.filter(l => l.id !== lastTask.target.id);
-            if (filteredPool.length > 0) typeSpecificPool = filteredPool;
+        if (chosenType === 'mapChange') {
+            return getRandomActivity({ ...lastTask, target: { ...lastTask.target, type: 'mapChange' } });
         }
 
-        if (typeSpecificPool.length === 0) {
-            typeSpecificPool = basePool.filter(l => l.type === chosenType);
-            if (typeSpecificPool.length === 0) return getRandomActivity(null);
+        let target;
+        if (chosenType === 'mission' || chosenType === 'controlPoint') {
+            const deck = targetMap.uniqueTaskDeck;
+            let taskIndex = deck.findIndex(t => t.type === chosenType);
+
+            if (taskIndex !== -1) {
+                target = deck.splice(taskIndex, 1)[0];
+            } else {
+                if (repeatableTasksInMap.length > 0) {
+                    let fallbackType = getWeightedRandomType(repeatableTasksInMap.map(t => t.type), lastTaskType);
+                    let pool = repeatableTasksInMap.filter(t => t.type === fallbackType);
+                    target = pool[Math.floor(Math.random() * pool.length)];
+                } else {
+                    return { target: { title: "All tasks done!" }, map: targetMap, mapSwitched };
+                }
+            }
+        } else {
+            let pool = repeatableTasksInMap.filter(t => t.type === chosenType);
+            target = pool[Math.floor(Math.random() * pool.length)];
         }
 
-        const target = typeSpecificPool[Math.floor(Math.random() * typeSpecificPool.length)];
-
-        if (!target) return { target: { title: "Error selecting task!" }, travelInfo: {}, map: targetMap, mapSwitched };
+        if (!target) { return getRandomActivity(lastTask); }
 
         if (target.type === 'activity' && lastTask && lastTask.map.meta.id === targetMap.meta.id && lastTask.target.district) {
             target.district = lastTask.target.district;
         }
 
         let travelInfo = {};
-        if (target.isFastTravel) {
-            travelInfo = { message: "Fast travel directly." };
-        } else if (!target.coords) {
-            travelInfo = { message: `In ${target.district}` };
-        } else {
-            travelInfo = findClosestFastTravel(target, targetMap);
-        }
+        if (target.isFastTravel) { travelInfo = { message: "Fast travel directly." }; }
+        else if (!target.coords) { travelInfo = { message: `In ${target.district} district.` }; }
+        else { travelInfo = findClosestFastTravel(target, targetMap); }
+
         return { target, travelInfo, map: targetMap, mapSwitched };
     }
 
@@ -383,10 +413,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addNewTask(taskData) {
-        if (!taskData || !taskData.target) {
-            console.error("Invalid task data received", taskData);
-            return;
-        }
         state.currentTask = taskData;
         state.currentTaskStartTime = Date.now();
         const { primaryText, secondaryText, mapText } = createTaskDisplay(taskData);
@@ -407,6 +433,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function startSession() {
         sessionData = JSON.parse(JSON.stringify(masterMapsData));
+
+        sessionData.forEach(map => {
+            const uniqueTasks = map.locations.filter(l => l.type === 'mission' || l.type === 'controlPoint');
+            shuffleArray(uniqueTasks);
+            map.uniqueTaskDeck = uniqueTasks;
+            map.repeatableTaskPool = map.locations.filter(l => l.type === 'activity' || l.type === 'bounty');
+        });
+
         const enabledMaps = sessionData.filter(m => m.meta.enabled);
         if (enabledMaps.length === 0) {
             alert('Please enable at least one map!');
