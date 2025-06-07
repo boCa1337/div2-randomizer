@@ -11,14 +11,19 @@
     <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon/favicon-16x16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon/favicon-32x32.png">
     <link rel="stylesheet" href="./assets/css/style.css">
+    <script src="./assets/data/maps.js" defer></script>
+    <script src="./assets/data/icons.js" defer></script>
     <script src="./assets/js/app.js" defer></script>
 </head>
 
 <body>
     <div class="shd-container">
         <header class="main-header">
-            <h1>SHD SESSION RANDOMIZER</h1>
-            <div id="settings-container">
+            <div class="title-bar">
+                <h1>SHD SESSION RANDOMIZER</h1>
+                <button id="toggle-settings-btn" class="icon-button"></button>
+            </div>
+            <div id="settings-container" class="is-collapsed">
                 <div class="settings-column" id="weights-settings">
                     <h2 class="settings-title">Activity Weights</h2>
                     <div id="weights-editor"></div>
