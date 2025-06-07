@@ -153,7 +153,6 @@ body {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
-    overflow: hidden;
     max-height: 500px;
     transition: max-height 0.4s ease-in-out, opacity 0.3s, margin-bottom 0.4s, margin-top 0.4s;
     opacity: 1;
@@ -165,6 +164,7 @@ body {
     opacity: 0;
     margin-bottom: 0;
     margin-top: 0;
+    pointer-events: none; 
 }
 
 #settings-container::before {
@@ -275,6 +275,7 @@ body {
 }
 
 input[type=range] {
+    appearance: none;
     -webkit-appearance: none;
     background: transparent;
     cursor: pointer;
@@ -545,6 +546,7 @@ input[type=range]::-moz-range-thumb {
         gap: 25px;
         margin-bottom: 30px;
         margin-top: 0;
+        overflow: hidden;
     }
 
     #settings-container::before {

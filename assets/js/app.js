@@ -1,5 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-
     const REPEAT_TYPE_MALUS = 0.25;
     const MIN_TASKS_BEFORE_SWITCH = 8;
     const MAP_SWITCH_CHANCE = 0.25;
@@ -47,7 +46,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function getDistance(c1, c2, scale = 1) {
         if (!c1 || !c2) return Infinity;
         const rawDist = Math.sqrt(Math.pow(c1.x - c2.x, 2) + Math.pow(c1.y - c2.y, 2));
-
         return Math.round(rawDist * scale);
     }
 
@@ -89,10 +87,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return { map, weight };
         });
-
         const totalWeight = weightedMaps.reduce((sum, item) => sum + item.weight, 0);
         if (totalWeight <= 0) return maps[0];
-
         let randomNum = Math.random() * totalWeight;
         for (const item of weightedMaps) {
             randomNum -= item.weight;
@@ -121,26 +117,21 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        if (targetMap.uniqueTaskDeck.length === 0) {
-            const allUniqueTasks = targetMap.locations.filter(l => l.type === 'mission' || l.type === 'controlPoint');
-            shuffleArray(allUniqueTasks);
-            targetMap.uniqueTaskDeck = allUniqueTasks;
+        if (targetMap.missionDeck.length === 0) {
+            const allMissions = targetMap.locations.filter(l => l.type === 'mission');
+            shuffleArray(allMissions);
+            targetMap.missionDeck = allMissions;
         }
 
-        const uniqueTasksInMap = targetMap.uniqueTaskDeck.filter(task => typeWeights[task.type] > 0);
+        const availableMissions = targetMap.missionDeck.filter(task => typeWeights.mission > 0);
+        const availableCPs = targetMap.locations.filter(l => l.type === 'controlPoint' && !l.isFastTravel && typeWeights.controlPoint > 0);
         const repeatableTasksInMap = targetMap.repeatableTaskPool.filter(task => typeWeights[task.type] > 0);
 
         let availableTypes = [];
-        if (uniqueTasksInMap.length > 0) {
-            availableTypes.push(...[...new Set(uniqueTasksInMap.map(t => t.type))]);
-        }
+        if (availableMissions.length > 0) availableTypes.push('mission');
+        if (availableCPs.length > 0) availableTypes.push('controlPoint');
         if (repeatableTasksInMap.length > 0) {
             availableTypes.push(...[...new Set(repeatableTasksInMap.map(t => t.type))]);
-        }
-
-        if (mapSwitched && availableTypes.length > 1) {
-        } else if (canSwitch && !mapSwitched) {
-            availableTypes.push('mapChange');
         }
 
         if (availableTypes.length === 0) {
@@ -149,32 +140,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const chosenType = getWeightedRandomType(availableTypes, lastTaskType);
 
-        if (chosenType === 'mapChange') {
-            return getRandomActivity({ ...lastTask, target: { ...lastTask.target, type: 'mapChange' } });
-        }
-
         let target;
-        if (chosenType === 'mission' || chosenType === 'controlPoint') {
-            const deck = targetMap.uniqueTaskDeck;
-            let taskIndex = deck.findIndex(t => t.type === chosenType);
-
-            if (taskIndex !== -1) {
-                target = deck.splice(taskIndex, 1)[0];
-            } else {
-                if (repeatableTasksInMap.length > 0) {
-                    let fallbackType = getWeightedRandomType(repeatableTasksInMap.map(t => t.type), lastTaskType);
-                    let pool = repeatableTasksInMap.filter(t => t.type === fallbackType);
-                    target = pool[Math.floor(Math.random() * pool.length)];
-                } else {
-                    return { target: { title: "All tasks done!" }, map: targetMap, mapSwitched };
-                }
-            }
+        if (chosenType === 'mission') {
+            target = targetMap.missionDeck.pop();
+        } else if (chosenType === 'controlPoint') {
+            target = availableCPs[Math.floor(Math.random() * availableCPs.length)];
         } else {
-            let pool = repeatableTasksInMap.filter(t => t.type === chosenType);
-            target = pool[Math.floor(Math.random() * pool.length)];
+            const pool = repeatableTasksInMap.filter(t => t.type === chosenType);
+            if (pool.length > 0) {
+                target = pool[Math.floor(Math.random() * pool.length)];
+            }
         }
 
-        if (!target) { return getRandomActivity(lastTask); }
+        if (!target) {
+            const remainingTypes = availableTypes.filter(t => t !== chosenType);
+            if (remainingTypes.length > 0) {
+                return getRandomActivity(lastTask);
+            } else {
+                return { target: { title: "No tasks left to select!" }, map: targetMap, mapSwitched };
+            }
+        }
 
         if (target.type === 'activity' && lastTask && lastTask.map.meta.id === targetMap.meta.id && lastTask.target.district) {
             target.district = lastTask.target.district;
@@ -182,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let travelInfo = {};
         if (target.isFastTravel) { travelInfo = { message: "Fast travel directly." }; }
-        else if (!target.coords) { travelInfo = { message: `In ${target.district} district.` }; }
+        else if (!target.coords) { travelInfo = { message: `In ${target.district}.` }; }
         else { travelInfo = findClosestFastTravel(target, targetMap); }
 
         return { target, travelInfo, map: targetMap, mapSwitched };
@@ -193,24 +178,19 @@ document.addEventListener('DOMContentLoaded', () => {
         let primaryText = target.title;
         let secondaryText = "";
         let mapText = map ? map.meta.title : "";
-
         switch (target.type) {
             case 'mission': primaryText = `Mission: ${target.title}`; break;
             case 'controlPoint': primaryText = `CP: ${target.title}`; break;
             case 'bounty': primaryText = `Bounty: ${target.district}`; break;
             case 'activity': primaryText = `Random Activity`; break;
         }
-
-        if (travelInfo.nearestPoint) {
+        if (target.type === 'activity') {
+            secondaryText = `Recommended: ${target.district}`;
+        } else if (travelInfo.nearestPoint) {
             secondaryText = `via ${travelInfo.nearestPoint.title} (~${travelInfo.distance}m)`;
         } else if (travelInfo.message) {
             secondaryText = travelInfo.message;
         }
-
-        if (target.type === 'activity') {
-            secondaryText = `Recommended: ${target.district}`;
-        }
-
         return { primaryText, secondaryText, mapText };
     }
 
@@ -256,9 +236,9 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionData = JSON.parse(JSON.stringify(masterMapsData));
 
         sessionData.forEach(map => {
-            const uniqueTasks = map.locations.filter(l => l.type === 'mission' || l.type === 'controlPoint');
-            shuffleArray(uniqueTasks);
-            map.uniqueTaskDeck = uniqueTasks;
+            const missions = map.locations.filter(l => l.type === 'mission');
+            shuffleArray(missions);
+            map.missionDeck = missions;
             map.repeatableTaskPool = map.locations.filter(l => l.type === 'activity' || l.type === 'bounty');
         });
 
@@ -272,13 +252,12 @@ document.addEventListener('DOMContentLoaded', () => {
         state.currentMapId = startingMap.meta.id;
         state.tasksOnCurrentMap = 0;
         state.mapHistory = [startingMap.meta.id];
-
         state.isSessionActive = true;
         state.isPaused = false;
         state.sessionStartTime = Date.now();
         state.totalTimePaused = 0;
-        addNewTask(getRandomActivity(null));
         state.timerInterval = setInterval(updateTimers, 1000);
+        addNewTask(getRandomActivity(null));
 
         startBtn.style.display = 'none';
         pauseBtn.style.display = 'inline-block';
@@ -288,7 +267,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function nextTask() {
         if (!state.currentTask) return;
-
         let duration;
         if (state.isPaused) {
             duration = Math.floor((state.pauseStartTime - state.currentTaskStartTime) / 1000);
@@ -298,13 +276,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             duration = Math.floor((Date.now() - state.currentTaskStartTime) / 1000);
         }
-
         const finishedRow = taskListEl.querySelector('.task-row.active');
         if (finishedRow) {
             finishedRow.querySelector('.time').textContent = formatTime(duration);
             finishedRow.classList.remove('active');
         }
-
         const lastTask = state.currentTask;
         if (lastTask.target.type === 'controlPoint') {
             const mapOfTask = sessionData.find(m => m.meta.id === lastTask.map.meta.id);
@@ -313,9 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (cpInSession) cpInSession.isFastTravel = true;
             }
         }
-
         const newTaskData = getRandomActivity(lastTask);
-
         if (newTaskData.mapSwitched) {
             state.currentMapId = newTaskData.map.meta.id;
             state.tasksOnCurrentMap = 0;
@@ -326,7 +300,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             state.tasksOnCurrentMap++;
         }
-
         addNewTask(newTaskData);
     }
 
@@ -366,14 +339,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (type === 'mapChange') return;
             const group = document.createElement('div');
             group.className = 'weight-input-group';
-
             const iconWrapper = document.createElement('div');
             iconWrapper.className = 'icon-wrapper';
             iconWrapper.innerHTML = icons[type] || '';
             iconWrapper.setAttribute('data-tooltip', `${type.charAt(0).toUpperCase() + type.slice(1)} (${typeWeights[type]})`);
-
             iconWrapper.dataset.type = type;
-
             const slider = document.createElement('input');
             slider.type = 'range';
             slider.id = `weight-${type}`;
@@ -381,18 +351,14 @@ document.addEventListener('DOMContentLoaded', () => {
             slider.max = 50;
             slider.value = typeWeights[type];
             slider.dataset.type = type;
-
             slider.addEventListener('input', (e) => {
                 const newWeight = parseInt(e.target.value, 10);
                 const taskType = e.target.dataset.type;
-
                 iconWrapper.setAttribute('data-tooltip', `${taskType.charAt(0).toUpperCase() + taskType.slice(1)} (${newWeight})`);
-
                 if (!isNaN(newWeight)) {
                     typeWeights[taskType] = newWeight;
                 }
             });
-
             group.appendChild(iconWrapper);
             group.appendChild(slider);
             weightsEditorEl.appendChild(group);
@@ -412,11 +378,21 @@ document.addEventListener('DOMContentLoaded', () => {
             input.checked = map.meta.enabled;
             input.addEventListener('change', (e) => {
                 const mapToUpdate = masterMapsData.find(m => m.meta.id === map.meta.id);
-                if (mapToUpdate) mapToUpdate.meta.enabled = e.target.checked;
-
-                if (!e.target.checked && state.currentMapId === mapToUpdate.meta.id) {
+                if (mapToUpdate) { 
+                    mapToUpdate.meta.enabled = e.target.checked; 
+                }
+                if (state.isSessionActive) {
+                    const mapInSession = sessionData.find(m => m.meta.id === map.meta.id);
+                    if (mapInSession) { mapInSession.meta.enabled = e.target.checked; }
                     const remainingEnabledMaps = masterMapsData.filter(m => m.meta.enabled);
-                    if (remainingEnabledMaps.length > 0) {
+                    if (remainingEnabledMaps.length === 0) {
+                        alert("You can't disable the last active map during a session!");
+                        e.target.checked = true;
+                        if (mapToUpdate) mapToUpdate.meta.enabled = true;
+                        if (mapInSession) mapInSession.meta.enabled = true;
+                        return;
+                    }
+                    if (!e.target.checked && state.currentMapId === mapToUpdate.meta.id) {
                         state.currentMapId = remainingEnabledMaps[0].meta.id;
                         state.tasksOnCurrentMap = 0;
                         state.mapHistory = [remainingEnabledMaps[0].meta.id];
@@ -434,9 +410,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     startBtn.addEventListener('click', startSession);
-    nextTaskBtn.addEventListener('click', nextTask);
     pauseBtn.addEventListener('click', pauseSession);
     resetBtn.addEventListener('click', resetSession);
+    nextTaskBtn.addEventListener('click', nextTask);
 
     toggleSettingsBtn.innerHTML = icons.gear;
     toggleSettingsBtn.addEventListener('click', () => {
