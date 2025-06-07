@@ -200,7 +200,7 @@ body {
     text-align: left;
     letter-spacing: 1px;
     text-transform: uppercase;
-    padding-bottom: 15px;
+    padding-bottom: 20px;
     width: 100%;
     max-width: 220px;
 }
@@ -484,6 +484,24 @@ input[type=range]::-moz-range-thumb {
     min-width: 190px;
     text-align: left;
     font-variant-numeric: tabular-nums;
+}
+
+.map-toggle-group .map-name::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #E74C3C;
+    transition: all 0.2s;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+    margin-right: 7px;
+    vertical-align: middle;
+}
+
+.map-toggle-group input[type="checkbox"]:checked+.map-name::before {
+    background-color: #2ECC71;
+    box-shadow: 0 0 7px #2ECC71;
 }
 
 ::-webkit-scrollbar {
