@@ -107,12 +107,35 @@ document.addEventListener('DOMContentLoaded', () => {
         let targetMap = currentMap;
         let mapSwitched = false;
 
-        const canSwitch = enabledMaps.length > 1 && state.tasksOnCurrentMap >= MIN_TASKS_BEFORE_SWITCH;
-        if (canSwitch && Math.random() < MAP_SWITCH_CHANCE) {
+        let currentMapPlayableTasks = currentMap.locations.filter(l =>
+            (typeWeights[l.type] > 0) &&
+            !(l.type === 'controlPoint' && l.isFastTravel)
+        );
+
+        if (currentMapPlayableTasks.length === 0) {
             const otherMaps = enabledMaps.filter(m => m.meta.id !== currentMap.meta.id);
-            if (otherMaps.length > 0) {
-                targetMap = getWeightedRandomMap(otherMaps);
-                mapSwitched = true;
+            let foundNewMap = false;
+            for (const map of otherMaps) {
+                const potentialTasks = map.locations.filter(l => typeWeights[l.type] > 0 && !(l.type === 'controlPoint' && l.isFastTravel));
+                if (potentialTasks.length > 0) {
+                    targetMap = map;
+                    mapSwitched = true;
+                    foundNewMap = true;
+                    break;
+                }
+            }
+
+            if (!foundNewMap) {
+                return { target: { title: "No tasks left on any enabled map!" }, travelInfo: { message: "Adjust weights or reset." }, map: currentMap, mapSwitched: false };
+            }
+        } else {
+            const canSwitch = enabledMaps.length > 1 && state.tasksOnCurrentMap >= MIN_TASKS_BEFORE_SWITCH;
+            if (canSwitch && Math.random() < MAP_SWITCH_CHANCE) {
+                const otherMaps = enabledMaps.filter(m => m.meta.id !== currentMap.meta.id);
+                if (otherMaps.length > 0) {
+                    targetMap = getWeightedRandomMap(otherMaps);
+                    mapSwitched = true;
+                }
             }
         }
 
@@ -143,13 +166,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const lastTaskType = lastTask ? lastTask.target.type : null;
-        const chosenType = getWeightedRandomType(availableTypes, lastTaskType);
+        const chosenType = getWeightedRandomType(availableTypes, mapSwitched ? null : lastTaskType);
 
         let target;
-        if (chosenType === 'mission') {
-            target = targetMap.missionDeck.pop();
-        } else if (chosenType === 'controlPoint') {
-            target = availableCPs[Math.floor(Math.random() * availableCPs.length)];
+        if (chosenType === 'mission' || chosenType === 'controlPoint') {
+            const deck = (chosenType === 'mission') ? targetMap.missionDeck : availableCPs;
+            if (chosenType === 'mission') {
+                target = deck.pop();
+            } else {
+                target = deck[Math.floor(Math.random() * deck.length)];
+            }
         } else {
             const pool = repeatableTasksInMap.filter(t => t.type === chosenType);
             if (pool.length > 0) {
@@ -158,12 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (!target) {
-            const remainingTypes = availableTypes.filter(t => t !== chosenType);
-            if (remainingTypes.length > 0) {
-                return getRandomActivity(lastTask);
-            } else {
-                return { target: { title: "No tasks left to select!" }, travelInfo: { message: 'Adjust weights or reset session.' }, map: targetMap, mapSwitched };
-            }
+            return { target: { title: "No tasks left to select!" }, travelInfo: { message: 'Adjust weights or reset session.' }, map: targetMap, mapSwitched };
         }
 
         if (target.type === 'activity' && lastTask && lastTask.map.meta.id === targetMap.meta.id && lastTask.target.district) {
