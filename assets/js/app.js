@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const REPEAT_TYPE_MALUS = 0.25;
     const MIN_TASKS_BEFORE_SWITCH = 8;
+    const MIN_TASKS_AFTER_RESET = 3;
     const MAP_SWITCH_CHANCE = 0.25;
     const RESET_TASK_BASE_WEIGHT = 5;
     const RESET_TASK_WEIGHT_INCREASE = 10;
@@ -40,6 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
         mapSwitchCooldown: 0
     };
 
+    // --- UTILITY FUNCTIONS ---
+
     function shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -62,6 +65,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }, { dist: Infinity, point: null });
         return { nearestPoint: closest.point, distance: closest.dist };
     }
+
+    function getUncapturedCps(map) {
+        if (!map) return [];
+        return map.locations.filter(l => l.type === 'controlPoint' && !l.isFastTravel);
+    }
+
+    // --- CORE LOGIC ---
 
     function getWeightedRandomType(availableTypes, lastTaskType, dynamicWeights = {}) {
         const weightedTypes = availableTypes.map(type => {
@@ -123,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (currentMapPlayableTasks.length === 0) {
             const hasCpsOnMap = currentMap.locations.some(l => l.type === 'controlPoint');
-            const areAllCpsCapturedOnCurrentMap = hasCpsOnMap && currentMap.locations.filter(l => l.type === 'controlPoint' && !l.isFastTravel).length === 0;
+            const areAllCpsCapturedOnCurrentMap = hasCpsOnMap && getUncapturedCps(currentMap).length === 0;
 
             if (!areAllCpsCapturedOnCurrentMap) {
                 const otherMaps = enabledMaps.filter(m => m.meta.id !== currentMap.meta.id);
@@ -163,8 +173,8 @@ document.addEventListener('DOMContentLoaded', () => {
             targetMap.missionDeck = allMissions;
         }
 
-        const availableCPs = targetMap.locations.filter(l => l.type === 'controlPoint' && !l.isFastTravel && typeWeights.controlPoint > 0);
-        const availableMissions = targetMap.missionDeck.filter(l => typeWeights.mission > 0);
+        const availableCPs = typeWeights.controlPoint > 0 ? getUncapturedCps(targetMap) : [];
+        const availableMissions = typeWeights.mission > 0 ? targetMap.missionDeck : [];
         const repeatableTasksInMap = targetMap.repeatableTaskPool.filter(task => typeWeights[task.type] > 0);
 
         let availableTypes = [];
@@ -186,7 +196,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let filteredAvailableTypes = availableTypes.filter(type => !excludeTypes.includes(type));
         if (filteredAvailableTypes.length === 0 && availableTypes.length > 0) {
-            // fallback if e.g. only activities are available after map reset, which is prevented by default.
             filteredAvailableTypes = availableTypes;
         }
 
@@ -226,6 +235,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return { target, travelInfo, map: targetMap, mapSwitched };
     }
+
+    // --- UI & DISPLAY FUNCTIONS ---
 
     function createTaskDisplay(taskData) {
         const { target, travelInfo, map } = taskData;
@@ -296,6 +307,26 @@ document.addEventListener('DOMContentLoaded', () => {
         taskListEl.scrollTop = taskListEl.scrollHeight;
     }
 
+    // --- SESSION MANAGEMENT ---
+
+    function handleTaskCompletion(task, map) {
+        if (!task || !map) return;
+        const taskType = task.target.type;
+
+        if (taskType === 'controlPoint') {
+            const cpInSession = map.locations.find(loc => loc.id === task.target.id);
+            if (cpInSession) cpInSession.isFastTravel = true;
+        } else if (taskType === 'resetMap') {
+            map.locations.forEach(loc => {
+                if (loc.type === 'controlPoint') {
+                    loc.isFastTravel = false;
+                }
+            });
+            map.meta.tasksSinceCPsCleared = 0;
+            state.mapSwitchCooldown = MIN_TASKS_AFTER_RESET;
+        }
+    }
+
     function startSession() {
         sessionData = JSON.parse(JSON.stringify(masterMapsData));
 
@@ -351,21 +382,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const lastTask = state.currentTask;
         const mapOfLastTask = sessionData.find(m => m.meta.id === lastTask.map.meta.id);
-        let excludeNextTypes = [];
 
-        if (lastTask.target.type === 'controlPoint' && mapOfLastTask) {
-            const cpInSession = mapOfLastTask.locations.find(loc => loc.id === lastTask.target.id);
-            if (cpInSession) cpInSession.isFastTravel = true;
-        } else if (lastTask.target.type === 'resetMap' && mapOfLastTask) {
-            mapOfLastTask.locations.forEach(loc => {
-                if (loc.type === 'controlPoint') {
-                    loc.isFastTravel = false;
-                }
-            });
-            mapOfLastTask.meta.tasksSinceCPsCleared = 0;
-            state.mapSwitchCooldown = Math.ceil(MIN_TASKS_BEFORE_SWITCH / 2);
-            excludeNextTypes.push('activity');
-        }
+        handleTaskCompletion(lastTask, mapOfLastTask);
+        const excludeNextTypes = lastTask.target.type === 'resetMap' ? ['activity'] : [];
 
         const newTaskData = getRandomActivity(lastTask, excludeNextTypes);
 
@@ -383,11 +402,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const currentMapObject = sessionData.find(m => m.meta.id === state.currentMapId);
-            if (currentMapObject) {
-                const areCpsCleared = currentMapObject.locations.filter(l => l.type === 'controlPoint' && !l.isFastTravel).length === 0;
-                if (areCpsCleared) {
-                    currentMapObject.meta.tasksSinceCPsCleared++;
-                }
+            if (currentMapObject && getUncapturedCps(currentMapObject).length === 0) {
+                currentMapObject.meta.tasksSinceCPsCleared++;
             }
         }
         addNewTask(newTaskData);
@@ -422,6 +438,8 @@ document.addEventListener('DOMContentLoaded', () => {
         nextTaskBtn.disabled = true;
         pauseBtn.textContent = 'PAUSE';
     }
+
+    // --- INITIAL RENDER & EVENT LISTENERS ---
 
     function renderWeightEditor() {
         weightsEditorEl.innerHTML = '';
