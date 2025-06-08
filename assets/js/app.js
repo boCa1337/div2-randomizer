@@ -107,11 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let targetMap = currentMap;
         let mapSwitched = false;
 
-        let currentMapPlayableTasks = currentMap.locations.filter(l =>
-            (typeWeights[l.type] > 0) &&
-            !(l.type === 'controlPoint' && l.isFastTravel)
-        );
-
+        let currentMapPlayableTasks = currentMap.locations.filter(l => (typeWeights[l.type] > 0) && !(l.type === 'controlPoint' && l.isFastTravel));
         if (currentMapPlayableTasks.length === 0) {
             const otherMaps = enabledMaps.filter(m => m.meta.id !== currentMap.meta.id);
             let foundNewMap = false;
@@ -124,12 +120,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     break;
                 }
             }
-
             if (!foundNewMap) {
                 return { target: { title: "No tasks left on any enabled map!" }, travelInfo: { message: "Adjust weights or reset." }, map: currentMap, mapSwitched: false };
             }
         } else {
-            const canSwitch = enabledMaps.length > 1 && state.tasksOnCurrentMap >= MIN_TASKS_BEFORE_SWITCH;
+            const lastTaskHasCoords = !!lastTask?.target?.coords;
+            const canSwitch = enabledMaps.length > 1 && state.tasksOnCurrentMap >= MIN_TASKS_BEFORE_SWITCH && lastTaskHasCoords;
             if (canSwitch && Math.random() < MAP_SWITCH_CHANCE) {
                 const otherMaps = enabledMaps.filter(m => m.meta.id !== currentMap.meta.id);
                 if (otherMaps.length > 0) {
@@ -157,25 +153,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (availableTypes.length === 0) {
-            return {
-                target: { title: "No tasks left to select!", type: 'info' },
-                travelInfo: { message: 'Adjust weights or reset the session.' },
-                map: targetMap,
-                mapSwitched
-            };
+            return { target: { title: "No tasks left to select!", type: 'info' }, travelInfo: { message: 'Adjust weights or reset session.' }, map: targetMap, mapSwitched };
         }
 
         const lastTaskType = lastTask ? lastTask.target.type : null;
         const chosenType = getWeightedRandomType(availableTypes, mapSwitched ? null : lastTaskType);
 
         let target;
-        if (chosenType === 'mission' || chosenType === 'controlPoint') {
-            const deck = (chosenType === 'mission') ? targetMap.missionDeck : availableCPs;
-            if (chosenType === 'mission') {
-                target = deck.pop();
-            } else {
-                target = deck[Math.floor(Math.random() * deck.length)];
-            }
+        if (chosenType === 'mission') {
+            target = targetMap.missionDeck.pop();
+        } else if (chosenType === 'controlPoint') {
+            target = availableCPs[Math.floor(Math.random() * availableCPs.length)];
         } else {
             const pool = repeatableTasksInMap.filter(t => t.type === chosenType);
             if (pool.length > 0) {
@@ -289,8 +277,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.isPaused = false;
         state.sessionStartTime = Date.now();
         state.totalTimePaused = 0;
-        state.timerInterval = setInterval(updateTimers, 1000);
         addNewTask(getRandomActivity(null));
+        state.timerInterval = setInterval(updateTimers, 1000);
 
         startBtn.style.display = 'none';
         pauseBtn.style.display = 'inline-block';
