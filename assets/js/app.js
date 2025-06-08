@@ -2,6 +2,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const REPEAT_TYPE_MALUS = 0.25;
     const MIN_TASKS_BEFORE_SWITCH = 8;
     const MAP_SWITCH_CHANCE = 0.25;
+    const RESET_TASK_BASE_WEIGHT = 5;
+    const RESET_TASK_WEIGHT_INCREASE = 10;
+
 
     const startBtn = document.getElementById('start-btn');
     const pauseBtn = document.getElementById('pause-btn');
@@ -33,7 +36,8 @@ document.addEventListener('DOMContentLoaded', () => {
         timerInterval: null,
         currentMapId: null,
         tasksOnCurrentMap: 0,
-        mapHistory: []
+        mapHistory: [],
+        mapSwitchCooldown: 0
     };
 
     function shuffleArray(array) {
@@ -59,16 +63,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return { nearestPoint: closest.point, distance: closest.dist };
     }
 
-    function getWeightedRandomType(availableTypes, lastTaskType) {
+    function getWeightedRandomType(availableTypes, lastTaskType, dynamicWeights = {}) {
         const weightedTypes = availableTypes.map(type => {
-            let weight = typeWeights[type] || 1;
+            let weight;
+            if (dynamicWeights[type] !== undefined) {
+                weight = dynamicWeights[type];
+            } else {
+                weight = typeWeights[type] || 1;
+            }
+
             if (type === lastTaskType && lastTaskType !== 'activity') {
                 weight *= REPEAT_TYPE_MALUS;
             }
             return { type, weight };
         });
+
         const totalWeight = weightedTypes.reduce((sum, item) => sum + item.weight, 0);
         if (totalWeight <= 0) return availableTypes[0];
+
         let randomNum = Math.random() * totalWeight;
         for (const item of weightedTypes) {
             randomNum -= item.weight;
@@ -99,7 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return maps[maps.length - 1];
     }
 
-    function getRandomActivity(lastTask = null) {
+    function getRandomActivity(lastTask = null, excludeTypes = []) {
         const enabledMaps = sessionData.filter(m => m.meta.enabled);
         if (enabledMaps.length === 0) return { target: { title: "No Maps Enabled", type: 'error' }, travelInfo: { message: "Please enable a map." }, map: null, mapSwitched: false };
 
@@ -108,30 +120,40 @@ document.addEventListener('DOMContentLoaded', () => {
         let mapSwitched = false;
 
         let currentMapPlayableTasks = currentMap.locations.filter(l => (typeWeights[l.type] > 0) && !(l.type === 'controlPoint' && l.isFastTravel));
+
         if (currentMapPlayableTasks.length === 0) {
-            const otherMaps = enabledMaps.filter(m => m.meta.id !== currentMap.meta.id);
-            let foundNewMap = false;
-            for (const map of otherMaps) {
-                const potentialTasks = map.locations.filter(l => typeWeights[l.type] > 0 && !(l.type === 'controlPoint' && l.isFastTravel));
-                if (potentialTasks.length > 0) {
-                    targetMap = map;
-                    mapSwitched = true;
-                    foundNewMap = true;
-                    break;
-                }
-            }
-            if (!foundNewMap) {
-                return { target: { title: "No tasks left on any enabled map!" }, travelInfo: { message: "Adjust weights or reset." }, map: currentMap, mapSwitched: false };
-            }
-        } else {
-            const lastTaskHasCoords = !!lastTask?.target?.coords;
-            const canSwitch = enabledMaps.length > 1 && state.tasksOnCurrentMap >= MIN_TASKS_BEFORE_SWITCH && lastTaskHasCoords;
-            if (canSwitch && Math.random() < MAP_SWITCH_CHANCE) {
+            const hasCpsOnMap = currentMap.locations.some(l => l.type === 'controlPoint');
+            const areAllCpsCapturedOnCurrentMap = hasCpsOnMap && currentMap.locations.filter(l => l.type === 'controlPoint' && !l.isFastTravel).length === 0;
+
+            if (!areAllCpsCapturedOnCurrentMap) {
                 const otherMaps = enabledMaps.filter(m => m.meta.id !== currentMap.meta.id);
-                if (otherMaps.length > 0) {
-                    targetMap = getWeightedRandomMap(otherMaps);
-                    mapSwitched = true;
+                let foundNewMap = false;
+                for (const map of otherMaps) {
+                    const potentialTasks = map.locations.filter(l => typeWeights[l.type] > 0 && !(l.type === 'controlPoint' && l.isFastTravel));
+                    if (potentialTasks.length > 0) {
+                        targetMap = map;
+                        mapSwitched = true;
+                        foundNewMap = true;
+                        break;
+                    }
                 }
+                if (!foundNewMap) {
+                    return { target: { title: "No tasks left on any enabled map!" }, travelInfo: { message: "Adjust weights or reset." }, map: currentMap, mapSwitched: false };
+                }
+            }
+        }
+
+        const lastTaskHasCoords = !!lastTask?.target?.coords;
+        const canSwitch = enabledMaps.length > 1 &&
+            state.tasksOnCurrentMap >= MIN_TASKS_BEFORE_SWITCH &&
+            lastTaskHasCoords &&
+            state.mapSwitchCooldown === 0;
+
+        if (canSwitch && Math.random() < MAP_SWITCH_CHANCE) {
+            const otherMaps = enabledMaps.filter(m => m.meta.id !== currentMap.meta.id);
+            if (otherMaps.length > 0) {
+                targetMap = getWeightedRandomMap(otherMaps);
+                mapSwitched = true;
             }
         }
 
@@ -146,21 +168,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const repeatableTasksInMap = targetMap.repeatableTaskPool.filter(task => typeWeights[task.type] > 0);
 
         let availableTypes = [];
+        let dynamicWeights = {};
+
         if (availableMissions.length > 0) availableTypes.push('mission');
         if (availableCPs.length > 0) availableTypes.push('controlPoint');
         if (repeatableTasksInMap.length > 0) {
             availableTypes.push(...[...new Set(repeatableTasksInMap.map(t => t.type))]);
         }
 
-        if (availableTypes.length === 0) {
+        const hasControlPoints = targetMap.locations.some(l => l.type === 'controlPoint');
+        const areAllCpsCaptured = hasControlPoints && availableCPs.length === 0;
+
+        if (areAllCpsCaptured) {
+            availableTypes.push('resetMap');
+            dynamicWeights.resetMap = RESET_TASK_BASE_WEIGHT + (targetMap.meta.tasksSinceCPsCleared * RESET_TASK_WEIGHT_INCREASE);
+        }
+
+        let filteredAvailableTypes = availableTypes.filter(type => !excludeTypes.includes(type));
+        if (filteredAvailableTypes.length === 0 && availableTypes.length > 0) {
+            // fallback if e.g. only activities are available after map reset, which is prevented by default.
+            filteredAvailableTypes = availableTypes;
+        }
+
+        if (filteredAvailableTypes.length === 0) {
             return { target: { title: "No tasks left to select!", type: 'info' }, travelInfo: { message: 'Adjust weights or reset session.' }, map: targetMap, mapSwitched };
         }
 
         const lastTaskType = lastTask ? lastTask.target.type : null;
-        const chosenType = getWeightedRandomType(availableTypes, mapSwitched ? null : lastTaskType);
+        const chosenType = getWeightedRandomType(filteredAvailableTypes, mapSwitched ? null : lastTaskType, dynamicWeights);
 
         let target;
-        if (chosenType === 'mission') {
+        if (chosenType === 'resetMap') {
+            target = { id: 'dynamic_reset_map', type: 'resetMap', title: 'Reset Control Points', district: 'Map-wide' };
+        } else if (chosenType === 'mission') {
             target = targetMap.missionDeck.pop();
         } else if (chosenType === 'controlPoint') {
             target = availableCPs[Math.floor(Math.random() * availableCPs.length)];
@@ -197,6 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
             primaryText = target.title;
         } else {
             switch (target.type) {
+                case 'resetMap': primaryText = `Reset Control Points`; break;
                 case 'mission': primaryText = `Mission: ${target.title}`; break;
                 case 'controlPoint': primaryText = `CP: ${target.title}`; break;
                 case 'bounty': primaryText = `Bounty: ${target.district}`; break;
@@ -206,6 +247,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (target.type === 'activity') {
             secondaryText = `Recommended: ${target.district}`;
+        } else if (target.type === 'resetMap') {
+            secondaryText = `Open your map and use the 'Reset Control Points' feature.`;
         } else if (travelInfo && travelInfo.nearestPoint) {
             secondaryText = `via ${travelInfo.nearestPoint.title} (~${travelInfo.distance}m)`;
         } else if (travelInfo && travelInfo.message) {
@@ -261,6 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
             shuffleArray(missions);
             map.missionDeck = missions;
             map.repeatableTaskPool = map.locations.filter(l => l.type === 'activity' || l.type === 'bounty');
+            map.meta.tasksSinceCPsCleared = 0;
         });
 
         const enabledMaps = sessionData.filter(m => m.meta.enabled);
@@ -277,6 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.isPaused = false;
         state.sessionStartTime = Date.now();
         state.totalTimePaused = 0;
+        state.mapSwitchCooldown = 0;
         addNewTask(getRandomActivity(null));
         state.timerInterval = setInterval(updateTimers, 1000);
 
@@ -289,6 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function nextTask() {
         if (!state.currentTask) return;
         let duration;
+
         if (state.isPaused) {
             duration = Math.floor((state.pauseStartTime - state.currentTaskStartTime) / 1000);
             state.totalTimePaused += Date.now() - state.pauseStartTime;
@@ -297,20 +343,32 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             duration = Math.floor((Date.now() - state.currentTaskStartTime) / 1000);
         }
+
         const finishedRow = taskListEl.querySelector('.task-row.active');
         if (finishedRow) {
             finishedRow.querySelector('.time').textContent = formatTime(duration);
             finishedRow.classList.remove('active');
         }
         const lastTask = state.currentTask;
-        if (lastTask.target.type === 'controlPoint') {
-            const mapOfTask = sessionData.find(m => m.meta.id === lastTask.map.meta.id);
-            if (mapOfTask) {
-                const cpInSession = mapOfTask.locations.find(loc => loc.id === lastTask.target.id);
-                if (cpInSession) cpInSession.isFastTravel = true;
-            }
+        const mapOfLastTask = sessionData.find(m => m.meta.id === lastTask.map.meta.id);
+        let excludeNextTypes = [];
+
+        if (lastTask.target.type === 'controlPoint' && mapOfLastTask) {
+            const cpInSession = mapOfLastTask.locations.find(loc => loc.id === lastTask.target.id);
+            if (cpInSession) cpInSession.isFastTravel = true;
+        } else if (lastTask.target.type === 'resetMap' && mapOfLastTask) {
+            mapOfLastTask.locations.forEach(loc => {
+                if (loc.type === 'controlPoint') {
+                    loc.isFastTravel = false;
+                }
+            });
+            mapOfLastTask.meta.tasksSinceCPsCleared = 0;
+            state.mapSwitchCooldown = Math.ceil(MIN_TASKS_BEFORE_SWITCH / 2);
+            excludeNextTypes.push('activity');
         }
-        const newTaskData = getRandomActivity(lastTask);
+
+        const newTaskData = getRandomActivity(lastTask, excludeNextTypes);
+
         if (newTaskData.mapSwitched) {
             state.currentMapId = newTaskData.map.meta.id;
             state.tasksOnCurrentMap = 0;
@@ -320,6 +378,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else {
             state.tasksOnCurrentMap++;
+            if (state.mapSwitchCooldown > 0) {
+                state.mapSwitchCooldown--;
+            }
+
+            const currentMapObject = sessionData.find(m => m.meta.id === state.currentMapId);
+            if (currentMapObject) {
+                const areCpsCleared = currentMapObject.locations.filter(l => l.type === 'controlPoint' && !l.isFastTravel).length === 0;
+                if (areCpsCleared) {
+                    currentMapObject.meta.tasksSinceCPsCleared++;
+                }
+            }
         }
         addNewTask(newTaskData);
     }
@@ -343,7 +412,7 @@ document.addEventListener('DOMContentLoaded', () => {
         Object.assign(state, {
             isSessionActive: false, isPaused: false, sessionStartTime: 0, currentTask: null,
             currentTaskStartTime: 0, totalTimePaused: 0, pauseStartTime: 0, timerInterval: null,
-            currentMapId: null, tasksOnCurrentMap: 0, mapHistory: []
+            currentMapId: null, tasksOnCurrentMap: 0, mapHistory: [], mapSwitchCooldown: 0
         });
         taskListEl.innerHTML = '';
         sessionTimerEl.textContent = '00:00:00';
