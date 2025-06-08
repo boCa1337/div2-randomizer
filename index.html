@@ -23,16 +23,26 @@
                 <h1>SHD SESSION RANDOMIZER</h1>
                 <button id="toggle-settings-btn" class="icon-button"></button>
             </div>
+            
             <div id="settings-container" class="is-collapsed">
-                <div class="settings-column" id="weights-settings">
-                    <h2 class="settings-title">Activity Weights</h2>
-                    <div id="weights-editor"></div>
-                </div>
-                <div class="settings-column" id="maps-settings">
+                <div class="settings-group" id="maps-settings">
                     <h2 class="settings-title">Enabled Maps</h2>
                     <div id="maps-editor"></div>
                 </div>
+                <div class="settings-group" id="weights-settings">
+                    <h2 class="settings-title">Activity Weights</h2>
+                    <div id="weights-editor"></div>
+                </div>
+                <div class="settings-group" id="factions-settings">
+                    <h2 class="settings-title">Enabled Factions</h2>
+                    <div id="factions-editor"></div>
+                </div>
+                <div class="settings-group" id="complexity-settings">
+                    <h2 class="settings-title">Max Complexity</h2>
+                    <div id="complexity-editor"></div>
+                </div>
             </div>
+
             <div class="session-controls">
                 <button id="start-btn" class="shd-button">INITIATE SESSION</button>
                 <button id="pause-btn" class="shd-button" style="display: none;">PAUSE</button>
