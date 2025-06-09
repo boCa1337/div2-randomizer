@@ -21,14 +21,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const mapsEditorEl = document.getElementById('maps-editor');
     const complexityEditorEl = document.getElementById('complexity-editor');
     const factionsEditorEl = document.getElementById('factions-editor');
+    const mementoModeEditorEl = document.getElementById('memento-mode-editor');
 
     // --- STATE & DATA ---
 
     let typeWeights = {
         activity: 30,
-        controlPoint: 20,
+        controlPoint: 25,
         mission: 10,
-        bounty: 5
+        bounty: 5,
+        classifiedAssignment: 0
     };
 
     let sessionData = null;
@@ -45,10 +47,11 @@ document.addEventListener('DOMContentLoaded', () => {
         tasksOnCurrentMap: 0,
         mapHistory: [],
         mapSwitchCooldown: 0,
-        maxComplexity: 10,
+        maxComplexity: 7,
         enabledFactions: [],
         lastTaskComplexity: 0,
-        totalSessionDuration: 0
+        totalSessionDuration: 0,
+        isMementoModeActive: false
     };
 
     // --- UTILITY FUNCTIONS ---
@@ -67,7 +70,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function findClosestFastTravel(target, map) {
-        const points = map.locations.filter(l => l.isFastTravel && l.coords);
+        let points = map.locations.filter(l => l.isFastTravel && l.coords);
+
+        if (state.isMementoModeActive) {
+            points = points.filter(p => p.type !== 'safeHouse' && p.type !== 'settlement');
+        }
+
         if (points.length === 0) return { message: "No fast travel points available." };
         const closest = points.reduce((acc, p) => {
             const dist = getDistance(target.coords, p.coords, map.meta.scale);
@@ -107,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!map) return [];
 
         return map.locations.filter(task => {
-            if (task.type === 'mission') {
+            if (task.type === 'mission' || task.type === 'classifiedAssignment') {
                 if (!map.missionDeck.find(m => m.id === task.id)) {
                     return false;
                 }
@@ -122,6 +130,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return false;
             }
             if (!task.factions || !task.factions.some(f => state.enabledFactions.includes(f))) {
+                return false;
+            }
+            if (state.isMementoModeActive && task.type === 'mission' && !task.coords) {
                 return false;
             }
             return true;
@@ -223,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let filteredTasks = allAvailableTasks.filter(task => !excludeTypes.includes(task.type));
         if (filteredTasks.length === 0 && allAvailableTasks.length > 0) { filteredTasks = allAvailableTasks; }
 
-        if (lastTask && lastTask.target.type === 'mission' && filteredTasks.length > 1) {
+        if (lastTask && (lastTask.target.type === 'mission' || lastTask.target.type === 'classifiedAssignment') && filteredTasks.length > 1) {
             const tasksWithoutLastMission = filteredTasks.filter(task => task.id !== lastTask.target.id);
             if (tasksWithoutLastMission.length > 0) {
                 filteredTasks = tasksWithoutLastMission;
@@ -267,6 +278,13 @@ document.addEventListener('DOMContentLoaded', () => {
         let primaryText = target.title;
         let secondaryText = "";
         let mapText = map ? map.meta.title : "";
+        let districtText = "";
+
+        if (target.type === 'activity') {
+            districtText = 'Any district';
+        } else if (target.district) {
+            districtText = target.district;
+        }
 
         if (target.type === 'info' || target.type === 'error') {
             primaryText = target.title;
@@ -275,22 +293,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'resetMap': primaryText = `Reset Control Points`; break;
                 case 'mission': primaryText = `Mission: ${target.title}`; break;
                 case 'controlPoint': primaryText = `CP: ${target.title}`; break;
-                case 'bounty': primaryText = `Bounty: ${target.district}`; break;
+                case 'bounty': primaryText = `Bounty Target`; break;
                 case 'activity': primaryText = `Random Activity`; break;
+                case 'classifiedAssignment': primaryText = `Classified: ${target.title}`; break;
             }
         }
 
         if (target.type === 'activity') {
-            secondaryText = `Recommended: ${target.district}`;
+            secondaryText = `Any open world activity`;
         } else if (target.type === 'resetMap') {
-            secondaryText = `Open your map and use the 'Reset Control Points' feature.`;
+            secondaryText = `Open your map and use the 'Reset Control Points' feature`;
         } else if (travelInfo && travelInfo.nearestPoint) {
             secondaryText = `via ${travelInfo.nearestPoint.title} (~${travelInfo.distance}m)`;
         } else if (travelInfo && travelInfo.message) {
-            secondaryText = travelInfo.message;
+            if (target.type === 'bounty') {
+                secondaryText = 'Find target in district';
+            } else {
+                secondaryText = travelInfo.message;
+            }
         }
 
-        return { primaryText, secondaryText, mapText };
+        return { primaryText, secondaryText, mapText, districtText };
     }
 
     function formatTime(totalSeconds) {
@@ -319,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function addNewTask(taskData) {
         state.currentTask = taskData;
         state.currentTaskStartTime = Date.now();
-        const { primaryText, secondaryText, mapText } = createTaskDisplay(taskData);
+        const { primaryText, secondaryText, mapText, districtText } = createTaskDisplay(taskData);
 
         const row = document.createElement('div');
         row.className = 'task-row active';
@@ -352,7 +375,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         row.innerHTML = `
             <div class="info">
-                <span class="task-map">${mapText}</span>
+                <div class="task-location">
+                    <span class="task-map">${mapText}</span>
+                    ${districtText ? `<span class="task-district">${districtText}</span>` : ''}
+                </div>
                 <h3>${primaryText}</h3>
                 <p>${secondaryText}</p>
                 ${metaInfoHTML}
@@ -375,7 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const cpInSession = map.locations.find(loc => loc.id === taskId);
             if (cpInSession) cpInSession.isFastTravel = true;
         }
-        else if (taskType === 'mission') {
+        else if (taskType === 'mission' || taskType === 'classifiedAssignment') {
             const missionIndex = map.missionDeck.findIndex(m => m.id === taskId);
             if (missionIndex > -1) {
                 map.missionDeck.splice(missionIndex, 1);
@@ -396,9 +422,9 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionData = JSON.parse(JSON.stringify(masterMapsData));
 
         sessionData.forEach(map => {
-            const missions = map.locations.filter(l => l.type === 'mission');
-            shuffleArray(missions);
-            map.missionDeck = missions;
+            const missionLikeTasks = map.locations.filter(l => l.type === 'mission' || l.type === 'classifiedAssignment');
+            shuffleArray(missionLikeTasks);
+            map.missionDeck = missionLikeTasks;
             map.repeatableTaskPool = map.locations.filter(l => l.type === 'activity' || l.type === 'bounty');
             map.meta.tasksSinceCPsCleared = 0;
         });
@@ -532,6 +558,25 @@ document.addEventListener('DOMContentLoaded', () => {
         pauseBtn.textContent = 'PAUSE';
     }
 
+    function handleKeyPress(event) {
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+            return;
+        }
+
+        if (event.code === 'Space') {
+            event.preventDefault();
+
+            if (state.isSessionActive) {
+                if (!nextTaskBtn.disabled) {
+                    nextTaskBtn.click();
+                }
+            } else {
+                startBtn.click();
+            }
+        }
+    }
+
     // --- INITIAL RENDER & EVENT LISTENERS ---
 
     function renderWeightEditor() {
@@ -541,7 +586,7 @@ document.addEventListener('DOMContentLoaded', () => {
             controlPoint: 'Control Points',
             mission: 'Missions',
             bounty: 'Bounties',
-            // classifiedAssignment: 'Classified Assignments'
+            classifiedAssignment: 'Classified Assignments'
         }
         Object.keys(typeWeights).forEach(type => {
             if (type === 'mapChange') return;
@@ -709,6 +754,40 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function renderMementoModeToggle() {
+        mementoModeEditorEl.innerHTML = '';
+        const group = document.createElement('div');
+        group.className = 'generic-toggle-group';
+
+        const label = document.createElement('label');
+        label.setAttribute('for', 'memento-toggle');
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.id = 'memento-toggle';
+        input.checked = state.isMementoModeActive;
+
+        const span = document.createElement('span');
+        span.className = 'toggle-name';
+
+        span.textContent = state.isMementoModeActive ? 'Enabled' : 'Disabled';
+
+        input.addEventListener('change', e => {
+            state.isMementoModeActive = e.target.checked;
+            span.textContent = e.target.checked ? 'Enabled' : 'Disabled';
+        });
+
+        label.appendChild(input);
+        label.appendChild(span);
+        group.appendChild(label);
+
+        const description = document.createElement('p');
+        description.className = 'setting-description';
+        description.textContent = 'Avoids locations that cancel Memento buff: Off-Site Missions, Safehouses, Settlements';
+
+        mementoModeEditorEl.appendChild(group);
+        mementoModeEditorEl.appendChild(description);
+    }
 
     startBtn.addEventListener('click', startSession);
     pauseBtn.addEventListener('click', pauseSession);
@@ -721,8 +800,11 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleSettingsBtn.classList.toggle('is-active');
     });
 
+    document.addEventListener('keydown', handleKeyPress);
+
     renderWeightEditor();
     renderMapSelector();
     renderComplexityFilter();
     renderFactionFilter();
+    renderMementoModeToggle();
 });
