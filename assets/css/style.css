@@ -39,11 +39,11 @@
 }
 
 :root {
-    --shd-orange: #ff8c00;
+    --shd-orange: #FF8C00;
     --shd-bg-dark: #111111;
-    --shd-bg-medium: #1a1a1a;
+    --shd-bg-medium: #1A1A1A;
     --shd-border-color: #333333;
-    --shd-text-light: #f5f5f5;
+    --shd-text-light: #F5F5F5;
     --shd-text-dark: #888888;
     --font-primary: 'Orbitron', sans-serif;
     --font-secondary: 'Roboto', sans-serif;
@@ -51,7 +51,9 @@
     --color-controlPoint: #2ECC71;
     --color-bounty: #E74C3C;
     --color-activity: #F39C12;
-    --color-classified: #5b5dff;
+    --color-classified: #5B5DFF;
+    --color-resetmap: #3498DB;
+    --color-info: #9B59B6;
     --shd-border-radius: 8px;
 }
 
@@ -535,6 +537,14 @@ input[type=range]::-moz-range-thumb {
     background-color: var(--color-classified);
 }
 
+.task-row[data-task-type="info"]::before {
+    background-color: var(--color-info);
+}
+
+.task-row[data-task-type="resetMap"]::before {
+    background-color: var(--color-resetmap);
+}
+
 .task-row .info {
     display: flex;
     flex-direction: column;
@@ -564,6 +574,13 @@ input[type=range]::-moz-range-thumb {
     font-size: 0.75em;
     text-transform: uppercase;
     color: var(--shd-orange);
+    font-weight: bold;
+}
+
+.task-info {
+    font-size: 0.75em;
+    text-transform: uppercase;
+    color: var(--color-info);
     font-weight: bold;
 }
 

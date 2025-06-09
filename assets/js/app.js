@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const RESET_TASK_WEIGHT_INCREASE = 10;
     const HIGH_COMPLEXITY_THRESHOLD = 5;
     const COMPLEXITY_MALUS = 0.1;
+    const FACTION_ORDER = ['hyenas', 'black_tusk', 'true_sons', 'cleaners', 'outcasts', 'rikers'];
 
     // --- DOM ELEMENTS ---
 
@@ -157,7 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getRandomActivity(lastTask = null, excludeTypes = []) {
         const enabledMaps = sessionData.filter(m => m.meta.enabled);
-        if (enabledMaps.length === 0) return { target: { title: "No Maps Enabled", type: 'error' }, travelInfo: { message: "Please enable a map." }, map: null, mapSwitched: false };
+        if (enabledMaps.length === 0) return { target: { title: "No Maps Enabled", type: 'info' }, travelInfo: { message: "Please enable a map." }, map: null, mapSwitched: false };
 
         if (typeWeights.mission > 0) {
             let allPlayableMissionsInDecks = [];
@@ -196,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let mapSwitched = false;
 
         if (!currentMap) {
-            return { target: { title: "No valid maps available" }, travelInfo: { message: "Check your filters or enabled maps." }, map: null, mapSwitched: false };
+            return { target: { title: "No valid maps available", type: 'info' }, travelInfo: { message: "Check your filters or enabled maps." }, map: null, mapSwitched: false };
         }
 
         const playableOnCurrentMap = getPlayableTasks(currentMap);
@@ -217,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             if (mustSwitch && !foundNewMap) {
-                return { target: { title: 'No valid tasks on any enabled map!' }, travelInfo: { message: 'Adjust filters or reset session.' }, map: currentMap, mapSwitched: false };
+                return { target: { title: 'No valid tasks on any enabled map!', type: 'info' }, travelInfo: { message: 'Adjust filters or reset session.' }, map: currentMap, mapSwitched: false };
             }
         }
 
@@ -260,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (randomNum <= 0) { chosenTask = item.task; break; }
         }
 
-        if (!chosenTask) { return { target: { title: "Could not select a task!", type: 'error' }, travelInfo: { message: 'Adjust filters or reset session.' }, map: targetMap, mapSwitched }; }
+        if (!chosenTask) { return { target: { title: "Could not select a task!", type: 'info' }, travelInfo: { message: 'Adjust filters or reset session.' }, map: targetMap, mapSwitched }; }
 
         const target = chosenTask;
         let travelInfo = {};
@@ -275,8 +276,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createTaskDisplay(taskData, allFactionsEnabled) {
         const { target, travelInfo, map } = taskData;
-        let primaryText = target.title;
-        let secondaryText = "";
+        let primaryText = '';
+        let secondaryText = '';
         let mapText = map ? map.meta.title : "";
         let districtText = "";
 
@@ -286,31 +287,37 @@ document.addEventListener('DOMContentLoaded', () => {
             districtText = target.district;
         }
 
-        if (target.type === 'info' || target.type === 'error') {
-            primaryText = target.title;
-        } else {
-            switch (target.type) {
-                case 'resetMap': primaryText = `Reset Control Points`; break;
-                case 'mission': primaryText = `Mission: ${target.title}`; break;
-                case 'controlPoint': primaryText = `CP: ${target.title}`; break;
-                case 'bounty': primaryText = `Bounty Target`; break;
-                case 'activity': primaryText = `Random Activity`; break;
-                case 'classifiedAssignment': primaryText = `Classified: ${target.title}`; break;
-            }
+        switch (target.type) {
+            case 'info':
+                primaryText = target.title;
+                break;
+            case 'resetMap':
+                primaryText = `Reset Control Points`;
+                secondaryText = `Open your map and use the 'Reset Control Points' feature`;
+                break;
+            case 'mission':
+                primaryText = `Mission: ${target.title}`;
+                break;
+            case 'classifiedAssignment':
+                primaryText = `Classified: ${target.title}`;
+                break;
+            case 'controlPoint':
+                primaryText = `CP: ${target.title}`;
+                break;
+            case 'bounty':
+                primaryText = `Bounty Target`;
+                secondaryText = 'Find target in district';
+                break;
+            case 'activity':
+                primaryText = `Random Activity`;
+                secondaryText = allFactionsEnabled ? `Any open world activity` : `District recommended for selected faction(s)`;
+                break;
         }
 
-        if (target.type === 'activity') {
-            secondaryText = allFactionsEnabled ? `Any open world activity` : `District recommended for selected faction(s)`;
-        } else if (target.type === 'resetMap') {
-            secondaryText = `Open your map and use the 'Reset Control Points' feature`;
-        } else if (travelInfo && travelInfo.nearestPoint) {
+        if (travelInfo && travelInfo.nearestPoint) {
             secondaryText = `via ${travelInfo.nearestPoint.title} (~${travelInfo.distance}m)`;
-        } else if (travelInfo && travelInfo.message) {
-            if (target.type === 'bounty') {
-                secondaryText = 'Find target in district';
-            } else {
-                secondaryText = travelInfo.message;
-            }
+        } else if (travelInfo && travelInfo.message && !secondaryText) {
+            secondaryText = travelInfo.message;
         }
 
         return { primaryText, secondaryText, mapText, districtText };
@@ -343,57 +350,56 @@ document.addEventListener('DOMContentLoaded', () => {
         state.currentTask = taskData;
         state.currentTaskStartTime = Date.now();
 
-        const factionOrder = ['hyenas', 'black_tusk', 'true_sons', 'cleaners', 'outcasts', 'rikers'];
-        const allFactionsEnabled = factionOrder.length === state.enabledFactions.length;
-
+        const allFactionsEnabled = FACTION_ORDER.length === state.enabledFactions.length;
         const { primaryText, secondaryText, mapText, districtText } = createTaskDisplay(taskData, allFactionsEnabled);
 
         const row = document.createElement('div');
         row.className = 'task-row active';
         row.dataset.taskType = taskData.target.type;
 
-        let metaInfoHTML = '';
         const complexity = taskData.target.complexity;
         const factions = taskData.target.factions;
-
-        if (complexity > 0 || (factions && factions.length > 0)) {
-            metaInfoHTML += `<div class="task-meta">`;
-
-            if (complexity > 0) {
-                metaInfoHTML += `
-                    <div class="task-complexity">
-                        <span class="label">Complexity:</span>
-                        <span class="value">${complexity}</span>
-                    </div>
-                `;
-            }
-
-            if (taskData.target.type === 'activity' && allFactionsEnabled) {
-                metaInfoHTML += `
-                    <div class="task-factions">
-                        <span class="faction-tag any-faction">Any Faction</span>
-                    </div>
-                `;
-            } else if (factions && factions.length > 0) {
-                metaInfoHTML += `
-                    <div class="task-factions">
-                        ${factions.map(f => `<span class="faction-tag">${f.replace('_', ' ')}</span>`).join('')}
-                    </div>
-                `;
-            }
-
-            metaInfoHTML += `</div>`;
-        }
 
         row.innerHTML = `
             <div class="info">
                 <div class="task-location">
-                    <span class="task-map">${mapText}</span>
-                    ${districtText ? `<span class="task-district">${districtText}</span>` : ''}
+                    ${taskData.target.type === 'info' ? `
+                        <span class="task-info">INFO</span>
+                    ` : `
+                        <span class="task-map">${mapText}</span>
+                        ${districtText ? `<span class="task-district">${districtText}</span>` : ''}
+                    `
+                    }
                 </div>
                 <h3>${primaryText}</h3>
                 <p>${secondaryText}</p>
-                ${metaInfoHTML}
+                ${(complexity > 0 || (factions && factions.length > 0)) ? `
+                    <div class="task-meta">
+                        ${complexity > 0 ? `
+                            <div class="task-complexity">
+                                <span class="label">Complexity:</span>
+                                <span class="value">${complexity}</span>
+                            </div>
+                        ` : ''}
+                        
+                        ${(() => {
+                            if (taskData.target.type === 'activity' && allFactionsEnabled) {
+                                return `
+                                    <div class="task-factions">
+                                        <span class="faction-tag any-faction">Any Faction</span>
+                                    </div>
+                                `;
+                            } else if (factions && factions.length > 0) {
+                                return `
+                                    <div class="task-factions">
+                                        ${factions.map(f => `<span class="faction-tag">${f.replace('_', ' ')}</span>`).join('')}
+                                    </div>
+                                `;
+                            }
+                            return '';
+                        })()}
+                    </div>
+                ` : ''}
             </div>
             <div class="time">00:00:00</div>
         `;
@@ -716,8 +722,8 @@ document.addEventListener('DOMContentLoaded', () => {
         legend.className = 'complexity-legend';
         legend.innerHTML = `
             <p><span>1-3:</span> Activities, CPs, Bounties</p>
-            <p><span>4-7:</span> Short Missions & Strongholds</p>
-            <p><span>8-10:</span> Manhunts, Long Missions & Strongholds</p>
+            <p><span>4-7:</span> Assignments & Missions</p>
+            <p><span>8-10:</span> Long Missions & Strongholds</p>
         `;
 
         group.appendChild(iconWrapper);
@@ -731,10 +737,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderFactionFilter() {
         factionsEditorEl.innerHTML = '';
 
-        const factionOrder = ['hyenas', 'black_tusk', 'true_sons', 'cleaners', 'outcasts', 'rikers'];
-        state.enabledFactions = [...factionOrder];
+        state.enabledFactions = [...FACTION_ORDER];
 
-        factionOrder.forEach(faction => {
+        FACTION_ORDER.forEach(faction => {
             const group = document.createElement('div');
             group.className = 'faction-toggle-group';
 
