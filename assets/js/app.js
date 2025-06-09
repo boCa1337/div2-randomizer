@@ -273,14 +273,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- UI & DISPLAY FUNCTIONS ---
 
-    function createTaskDisplay(taskData) {
+    function createTaskDisplay(taskData, allFactionsEnabled) {
         const { target, travelInfo, map } = taskData;
         let primaryText = target.title;
         let secondaryText = "";
         let mapText = map ? map.meta.title : "";
         let districtText = "";
 
-        if (target.type === 'activity') {
+        if (target.type === 'activity' && allFactionsEnabled) {
             districtText = 'Any district';
         } else if (target.district) {
             districtText = target.district;
@@ -300,7 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (target.type === 'activity') {
-            secondaryText = `Any open world activity`;
+            secondaryText = allFactionsEnabled ? `Any open world activity` : `District recommended for selected faction(s)`;
         } else if (target.type === 'resetMap') {
             secondaryText = `Open your map and use the 'Reset Control Points' feature`;
         } else if (travelInfo && travelInfo.nearestPoint) {
@@ -342,7 +342,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function addNewTask(taskData) {
         state.currentTask = taskData;
         state.currentTaskStartTime = Date.now();
-        const { primaryText, secondaryText, mapText, districtText } = createTaskDisplay(taskData);
+
+        const factionOrder = ['hyenas', 'black_tusk', 'true_sons', 'cleaners', 'outcasts', 'rikers'];
+        const allFactionsEnabled = factionOrder.length === state.enabledFactions.length;
+
+        const { primaryText, secondaryText, mapText, districtText } = createTaskDisplay(taskData, allFactionsEnabled);
 
         const row = document.createElement('div');
         row.className = 'task-row active';
@@ -364,10 +368,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
 
-            if (factions && factions.length > 0) {
-                metaInfoHTML += `<div class="task-factions">`;
-                metaInfoHTML += factions.map(f => `<span class="faction-tag">${f.replace('_', ' ')}</span>`).join('');
-                metaInfoHTML += `</div>`;
+            if (taskData.target.type === 'activity' && allFactionsEnabled) {
+                metaInfoHTML += `
+                    <div class="task-factions">
+                        <span class="faction-tag any-faction">Any Faction</span>
+                    </div>
+                `;
+            } else if (factions && factions.length > 0) {
+                metaInfoHTML += `
+                    <div class="task-factions">
+                        ${factions.map(f => `<span class="faction-tag">${f.replace('_', ' ')}</span>`).join('')}
+                    </div>
+                `;
             }
 
             metaInfoHTML += `</div>`;
