@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const HIGH_COMPLEXITY_THRESHOLD = 5;
     const COMPLEXITY_MALUS = 0.1;
     const FACTION_ORDER = ['hyenas', 'black_tusk', 'true_sons', 'cleaners', 'outcasts', 'rikers'];
+    const STORAGE_KEY = 'shd_randomizer_state';
 
     // --- DOM ELEMENTS ---
 
@@ -41,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionStartTime: 0,
         currentTask: null,
         currentTaskStartTime: 0,
+        currentTaskElapsedBeforePause: 0,
         totalTimePaused: 0,
         pauseStartTime: 0,
         timerInterval: null,
@@ -52,10 +54,26 @@ document.addEventListener('DOMContentLoaded', () => {
         enabledFactions: [],
         lastTaskComplexity: 0,
         totalSessionDuration: 0,
-        isMementoModeActive: false
+        isMementoModeActive: false,
+        taskHistory: []
     };
 
     // --- UTILITY FUNCTIONS ---
+
+    function initializeSessionData(isNewSession = false) {
+        sessionData = JSON.parse(JSON.stringify(masterMapsData));
+
+        sessionData.forEach(map => {
+            const missionLikeTasks = map.locations.filter(l => l.type === 'mission' || l.type === 'classifiedAssignment');
+            shuffleArray(missionLikeTasks);
+            map.missionDeck = missionLikeTasks;
+            map.repeatableTaskPool = map.locations.filter(l => l.type === 'activity' || l.type === 'bounty');
+
+            if (isNewSession) {
+                map.meta.tasksSinceCPsCleared = 0;
+            }
+        });
+    }
 
     function shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
@@ -88,6 +106,36 @@ document.addEventListener('DOMContentLoaded', () => {
     function getUncapturedCps(map) {
         if (!map) return [];
         return map.locations.filter(l => l.type === 'controlPoint' && !l.isFastTravel);
+    }
+
+    function saveState() {
+        const dataToSave = {
+            state: state,
+            typeWeights: typeWeights,
+            mapStates: masterMapsData.map(map => ({ id: map.meta.id, enabled: map.meta.enabled })),
+            sessionData: sessionData
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+    }
+
+    function loadState() {
+        const savedData = localStorage.getItem(STORAGE_KEY);
+        if (!savedData) return false;
+        const parsedData = JSON.parse(savedData);
+
+        if (!parsedData.state || !parsedData.typeWeights || !parsedData.mapStates || !parsedData.sessionData) {
+            localStorage.removeItem(STORAGE_KEY);
+            return false;
+        }
+
+        state = parsedData.state;
+        typeWeights = parsedData.typeWeights;
+        sessionData = parsedData.sessionData;
+        masterMapsData.forEach(map => {
+            const savedMap = parsedData.mapStates.find(sm => sm.id === map.meta.id);
+            if (savedMap) map.meta.enabled = savedMap.enabled;
+        });
+        return true;
     }
 
     // --- CORE LOGIC ---
@@ -333,32 +381,41 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateTimers() {
         if (!state.isSessionActive) return;
 
-        const activeRow = taskListEl.querySelector('.task-row.active .time');
-        let currentTaskElapsed = 0;
-        if (activeRow && !state.isPaused) {
-            currentTaskElapsed = Math.floor((Date.now() - state.currentTaskStartTime) / 1000);
-            activeRow.textContent = formatTime(currentTaskElapsed);
-        }
+        let currentTaskElapsedMs = state.currentTaskElapsedBeforePause;
 
         if (!state.isPaused) {
-            const totalElapsed = state.totalSessionDuration + currentTaskElapsed;
-            sessionTimerEl.textContent = formatTime(totalElapsed);
+            currentTaskElapsedMs += Date.now() - state.currentTaskStartTime;
         }
+
+        const currentTaskElapsedSec = Math.floor(currentTaskElapsedMs / 1000);
+
+        const activeRow = taskListEl.querySelector('.task-row.active .time');
+        if (activeRow) {
+            activeRow.textContent = formatTime(currentTaskElapsedSec);
+        }
+
+        const totalElapsed = state.totalSessionDuration + currentTaskElapsedSec;
+        sessionTimerEl.textContent = formatTime(totalElapsed);
     }
 
-    function addNewTask(taskData) {
-        state.currentTask = taskData;
-        state.currentTaskStartTime = Date.now();
+    function addNewTask(taskData, isActive = true) {
+        if (!taskData || !taskData.target) return;
+
+        if (isActive) {
+            state.currentTask = taskData;
+            state.currentTaskStartTime = Date.now();
+        }
 
         const allFactionsEnabled = FACTION_ORDER.length === state.enabledFactions.length;
         const { primaryText, secondaryText, mapText, districtText } = createTaskDisplay(taskData, allFactionsEnabled);
 
         const row = document.createElement('div');
-        row.className = 'task-row active';
+        row.className = 'task-row' + (isActive ? ' active' : '');
         row.dataset.taskType = taskData.target.type;
 
         const complexity = taskData.target.complexity;
         const factions = taskData.target.factions;
+        const timeText = taskData.duration ? formatTime(taskData.duration) : formatTime(0);
 
         row.innerHTML = `
             <div class="info">
@@ -369,7 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="task-map">${mapText}</span>
                         ${districtText ? `<span class="task-district">${districtText}</span>` : ''}
                     `
-                    }
+            }
                 </div>
                 <h3>${primaryText}</h3>
                 <p>${secondaryText}</p>
@@ -383,25 +440,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         ` : ''}
                         
                         ${(() => {
-                            if (taskData.target.type === 'activity' && allFactionsEnabled) {
-                                return `
+                    if (taskData.target.type === 'activity' && allFactionsEnabled) {
+                        return `
                                     <div class="task-factions">
                                         <span class="faction-tag any-faction">Any Faction</span>
                                     </div>
                                 `;
-                            } else if (factions && factions.length > 0) {
-                                return `
+                    } else if (factions && factions.length > 0) {
+                        return `
                                     <div class="task-factions">
                                         ${factions.map(f => `<span class="faction-tag">${f.replace('_', ' ')}</span>`).join('')}
                                     </div>
                                 `;
-                            }
-                            return '';
-                        })()}
+                    }
+                    return '';
+                })()}
                     </div>
                 ` : ''}
             </div>
-            <div class="time">00:00:00</div>
+            <div class="time">${timeText}</div>
         `;
 
         taskListEl.appendChild(row);
@@ -437,15 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function startSession() {
-        sessionData = JSON.parse(JSON.stringify(masterMapsData));
-
-        sessionData.forEach(map => {
-            const missionLikeTasks = map.locations.filter(l => l.type === 'mission' || l.type === 'classifiedAssignment');
-            shuffleArray(missionLikeTasks);
-            map.missionDeck = missionLikeTasks;
-            map.repeatableTaskPool = map.locations.filter(l => l.type === 'activity' || l.type === 'bounty');
-            map.meta.tasksSinceCPsCleared = 0;
-        });
+        initializeSessionData(true);
 
         const enabledMaps = sessionData.filter(m => m.meta.enabled);
         if (enabledMaps.length === 0) {
@@ -471,46 +520,53 @@ document.addEventListener('DOMContentLoaded', () => {
         state.isSessionActive = true;
         state.isPaused = false;
         state.sessionStartTime = Date.now();
-        state.totalTimePaused = 0;
+        state.totalSessionDuration = 0;
+        state.currentTaskElapsedBeforePause = 0;
         state.mapSwitchCooldown = 0;
-        addNewTask(getRandomActivity(null, ['activity']));
+
+        const firstTask = getRandomActivity(null, ['activity']);
+        state.currentTask = firstTask;
+        addNewTask(firstTask);
+
         state.timerInterval = setInterval(updateTimers, 1000);
 
         startBtn.style.display = 'none';
         pauseBtn.style.display = 'inline-block';
         resetBtn.style.display = 'inline-block';
         nextTaskBtn.disabled = false;
+
+        saveState();
     }
 
     function nextTask() {
         if (!state.currentTask) return;
         let duration;
 
-        if (state.isPaused) {
-            duration = Math.floor((state.pauseStartTime - state.currentTaskStartTime) / 1000);
-            state.totalTimePaused += Date.now() - state.pauseStartTime;
-            state.isPaused = false;
-            pauseBtn.textContent = 'PAUSE';
-        } else {
-            duration = Math.floor((Date.now() - state.currentTaskStartTime) / 1000);
-        }
-
-        state.totalSessionDuration += duration;
+        const lastTaskElapsedMs = state.currentTaskElapsedBeforePause + (state.isPaused ? 0 : (Date.now() - state.currentTaskStartTime));
+        duration = Math.floor(lastTaskElapsedMs / 1000);
 
         const finishedRow = taskListEl.querySelector('.task-row.active');
         if (finishedRow) {
             finishedRow.querySelector('.time').textContent = formatTime(duration);
             finishedRow.classList.remove('active');
         }
-        const lastTask = state.currentTask;
 
-        state.lastTaskComplexity = lastTask.target.complexity || 0;
-        const mapOfLastTask = sessionData.find(m => m.meta.id === lastTask.map.meta.id);
+        const finishedTask = state.currentTask;
+        finishedTask.duration = duration;
 
-        handleTaskCompletion(lastTask, mapOfLastTask);
-        const excludeNextTypes = lastTask.target.type === 'resetMap' ? ['activity'] : [];
+        state.totalSessionDuration += duration;
+        state.taskHistory.push(JSON.parse(JSON.stringify(finishedTask)));
+        state.lastTaskComplexity = finishedTask.target.complexity || 0;
 
-        const newTaskData = getRandomActivity(lastTask, excludeNextTypes);
+        const mapOfLastTask = sessionData.find(m => m.meta.id === finishedTask.map.meta.id);
+        handleTaskCompletion(finishedTask, mapOfLastTask);
+
+        state.currentTaskElapsedBeforePause = 0;
+        state.isPaused = false;
+        pauseBtn.textContent = 'PAUSE';
+
+        const excludeNextTypes = finishedTask.target.type === 'resetMap' ? ['activity'] : [];
+        const newTaskData = getRandomActivity(finishedTask, excludeNextTypes);
 
         if (newTaskData.mapSwitched) {
             state.currentMapId = newTaskData.map.meta.id;
@@ -530,42 +586,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentMapObject.meta.tasksSinceCPsCleared++;
             }
         }
+
+        state.currentTask = newTaskData;
         addNewTask(newTaskData);
+        saveState();
     }
 
     function pauseSession() {
+        if (!state.isSessionActive) return;
+
         if (state.isPaused) {
             state.isPaused = false;
-            state.totalTimePaused += Date.now() - state.pauseStartTime;
-            state.currentTaskStartTime += Date.now() - state.pauseStartTime;
+            state.currentTaskStartTime = Date.now();
             pauseBtn.textContent = 'PAUSE';
         } else {
-            if (!state.isSessionActive) return;
             state.isPaused = true;
-            state.pauseStartTime = Date.now();
+            state.currentTaskElapsedBeforePause += Date.now() - state.currentTaskStartTime;
             pauseBtn.textContent = 'RESUME';
         }
+        saveState();
     }
 
     function resetSession() {
         clearInterval(state.timerInterval);
 
-        Object.assign(state, {
-            isSessionActive: false,
-            isPaused: false,
-            sessionStartTime: 0,
-            currentTask: null,
-            currentTaskStartTime: 0,
-            totalTimePaused: 0,
-            pauseStartTime: 0,
-            timerInterval: null,
-            currentMapId: null,
-            tasksOnCurrentMap: 0,
-            mapHistory: [],
-            mapSwitchCooldown: 0,
-            lastTaskComplexity: 0,
-            totalSessionDuration: 0
-        });
+        state.isSessionActive = false;
+        state.isPaused = false;
+        state.sessionStartTime = 0;
+        state.currentTask = null;
+        state.currentTaskStartTime = 0;
+        state.totalTimePaused = 0;
+        state.pauseStartTime = 0;
+        state.timerInterval = null;
+        state.currentMapId = null;
+        state.tasksOnCurrentMap = 0;
+        state.mapHistory = [];
+        state.taskHistory = [];
+        state.totalSessionDuration = 0;
+        state.lastTaskComplexity = 0;
+
+        saveState();
 
         taskListEl.innerHTML = '';
         sessionTimerEl.textContent = '00:00:00';
@@ -595,7 +655,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- INITIAL RENDER & EVENT LISTENERS ---
+    // --- UX & RENDER ---
 
     function renderWeightEditor() {
         weightsEditorEl.innerHTML = '';
@@ -634,6 +694,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     typeWeights[type] = newWeight;
                     valueDisplay.textContent = newWeight;
                 }
+                saveState();
             });
 
             group.appendChild(iconWrapper);
@@ -678,6 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         state.mapHistory = [remainingEnabledMaps[0].meta.id];
                     }
                 }
+                saveState();
             });
 
             const span = document.createElement('span');
@@ -716,6 +778,7 @@ document.addEventListener('DOMContentLoaded', () => {
         slider.addEventListener('input', e => {
             state.maxComplexity = parseInt(e.target.value, 10);
             valueDisplay.textContent = state.maxComplexity;
+            saveState();
         });
 
         const legend = document.createElement('div');
@@ -737,7 +800,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderFactionFilter() {
         factionsEditorEl.innerHTML = '';
 
-        state.enabledFactions = [...FACTION_ORDER];
+        if (state.enabledFactions.length === 0) {
+            state.enabledFactions = [...FACTION_ORDER];
+        }
 
         FACTION_ORDER.forEach(faction => {
             const group = document.createElement('div');
@@ -750,7 +815,7 @@ document.addEventListener('DOMContentLoaded', () => {
             input.type = 'checkbox';
             input.id = `faction-toggle-${faction}`;
             input.value = faction;
-            input.checked = true;
+            input.checked = state.enabledFactions.includes(faction)
 
             input.addEventListener('change', e => {
                 if (e.target.checked) {
@@ -758,6 +823,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     state.enabledFactions = state.enabledFactions.filter(f => f !== e.target.value);
                 }
+                saveState();
             });
 
             const span = document.createElement('span');
@@ -767,6 +833,7 @@ document.addEventListener('DOMContentLoaded', () => {
             label.appendChild(input);
             label.appendChild(span);
             group.appendChild(label);
+
             factionsEditorEl.appendChild(group);
         });
     }
@@ -792,6 +859,7 @@ document.addEventListener('DOMContentLoaded', () => {
         input.addEventListener('change', e => {
             state.isMementoModeActive = e.target.checked;
             span.textContent = e.target.checked ? 'Enabled' : 'Disabled';
+            saveState();
         });
 
         label.appendChild(input);
@@ -806,22 +874,57 @@ document.addEventListener('DOMContentLoaded', () => {
         mementoModeEditorEl.appendChild(description);
     }
 
-    startBtn.addEventListener('click', startSession);
-    pauseBtn.addEventListener('click', pauseSession);
-    resetBtn.addEventListener('click', resetSession);
-    nextTaskBtn.addEventListener('click', nextTask);
+    // --- INIT ---
 
-    toggleSettingsBtn.innerHTML = icons.gear;
-    toggleSettingsBtn.addEventListener('click', () => {
-        document.getElementById('settings-container').classList.toggle('is-collapsed');
-        toggleSettingsBtn.classList.toggle('is-active');
-    });
+    function initializeApp() {
+        const stateLoaded = loadState();
 
-    document.addEventListener('keydown', handleKeyPress);
+        renderWeightEditor();
+        renderMapSelector();
+        renderComplexityFilter();
+        renderFactionFilter();
+        renderMementoModeToggle();
 
-    renderWeightEditor();
-    renderMapSelector();
-    renderComplexityFilter();
-    renderFactionFilter();
-    renderMementoModeToggle();
+        if (stateLoaded && state.isSessionActive) {
+            if (state.isPaused) {
+                const timePassedWhileClosed = Date.now() - state.pauseStartTime;
+                state.totalTimePaused += timePassedWhileClosed;
+                state.pauseStartTime = Date.now();
+                pauseBtn.textContent = 'RESUME';
+            }
+
+            taskListEl.innerHTML = '';
+            const restoredCurrentTask = state.currentTask;
+
+            if (state.taskHistory) {
+                state.taskHistory.forEach(task => addNewTask(task, false));
+            }
+            if (restoredCurrentTask) {
+                addNewTask(restoredCurrentTask, true);
+            }
+
+            startBtn.style.display = 'none';
+            pauseBtn.style.display = 'inline-block';
+            resetBtn.style.display = 'inline-block';
+            nextTaskBtn.disabled = false;
+
+            updateTimers();
+            state.timerInterval = setInterval(updateTimers, 1000);
+        }
+
+        startBtn.addEventListener('click', startSession);
+        pauseBtn.addEventListener('click', pauseSession);
+        resetBtn.addEventListener('click', resetSession);
+        nextTaskBtn.addEventListener('click', nextTask);
+
+        toggleSettingsBtn.innerHTML = icons.gear;
+        toggleSettingsBtn.addEventListener('click', () => {
+            document.getElementById('settings-container').classList.toggle('is-collapsed');
+            toggleSettingsBtn.classList.toggle('is-active');
+        });
+
+        document.addEventListener('keydown', handleKeyPress);
+    }
+
+    initializeApp();
 });
